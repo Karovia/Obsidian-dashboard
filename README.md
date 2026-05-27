@@ -11,7 +11,7 @@ Liquid Dashboard Home is an Obsidian plugin by Karovia. It turns Obsidian into a
 - Repository: [Karovia/Obsidian-dashboard](https://github.com/Karovia/Obsidian-dashboard)
 - Minimum Obsidian version: `1.5.0`
 - Desktop only: `false`
-- Current version: `0.3.1`
+- Current version: `0.3.2`
 
 ## Features
 
@@ -26,8 +26,9 @@ Liquid Dashboard Home is an Obsidian plugin by Karovia. It turns Obsidian into a
 ```
 
 - Calendar panel with daily task counts.
+- Future dated tasks are shown automatically in countdowns.
 - Today, this week, and next 7 days task views.
-- Recent notes list and in-dashboard Markdown reading.
+- Folder-tree note browser and in-dashboard Markdown reading.
 - Optional reading notes side panel.
 - Reading notes saved to `Dashboard/Reading Notes.md`.
 - OpenAI-compatible AI settings:

@@ -63,6 +63,21 @@ interface MindmapNode {
   parentId?: string;
 }
 
+interface NoteTreeNode {
+  name: string;
+  path: string;
+  type: "folder" | "file";
+  children: NoteTreeNode[];
+  file?: TFile;
+}
+
+interface CountdownDisplayItem {
+  name: string;
+  date: string;
+  time?: string;
+  source: "manual" | "task";
+}
+
 const TEXT = {
   en: {
     navHome: "Home",
@@ -188,6 +203,7 @@ const TEXT = {
     updateAvailable: "Update available",
     updateInstalled: "Update installed. Restart Obsidian or reload plugins to apply it.",
     updateFailed: "Update failed.",
+    fromTask: "Task",
     countdownsDesc: "Add a name and date. The dashboard calculates days from the system date.",
     countdown: "Countdown",
     name: "Name",
@@ -324,6 +340,7 @@ const TEXT = {
     updateAvailable: "发现新版本",
     updateInstalled: "更新已安装。请重启 Obsidian 或重新加载插件后生效。",
     updateFailed: "更新失败。",
+    fromTask: "任务",
     countdownsDesc: "添加名称和日期，Dashboard 会根据系统日期自动计算剩余天数。",
     countdown: "倒计时",
     name: "名称",
@@ -514,6 +531,7 @@ class LiquidDashboardView extends ItemView {
   private selectedFile: TFile | null = null;
   private showReadingNotes = false;
   private noteSearch = "";
+  private expandedFolders = new Set<string>();
   private aiQuestion = "";
   private aiResult = "";
   private aiBusy = false;
@@ -633,7 +651,7 @@ class LiquidDashboardView extends ItemView {
     await this.renderSelectedNotePreview(left, notes[0] ?? null, this.t("recentNotes"));
 
     this.renderCalendar(right, tasks);
-    this.renderCountdowns(right);
+    this.renderCountdowns(right, tasks);
     this.renderRecentNotes(right, notes);
   }
 
@@ -829,22 +847,55 @@ class LiquidDashboardView extends ItemView {
       void this.render();
     });
 
-    const filtered = notes.filter((file) => {
-      const query = this.noteSearch.trim().toLowerCase();
-      return !query || file.path.toLowerCase().includes(query);
-    });
-
+    const query = this.noteSearch.trim().toLowerCase();
+    const filtered = notes.filter((file) => !query || file.path.toLowerCase().includes(query));
     const list = sidebar.createDiv({ cls: "ld-vault-list" });
-    filtered.forEach((file) => {
-      const button = list.createEl("button", {
-        cls: `ld-vault-note ${this.selectedFile?.path === file.path ? "is-active" : ""}`
+    const tree = buildNoteTree(filtered);
+    tree.children.forEach((node) => this.renderNoteTreeNode(list, node, 0, Boolean(query)));
+  }
+
+  private renderNoteTreeNode(container: HTMLElement, node: NoteTreeNode, depth: number, forceExpanded: boolean) {
+    if (node.type === "folder") {
+      const containsSelected = Boolean(this.selectedFile && isPathInside(this.selectedFile.path, node.path));
+      const expanded = forceExpanded || containsSelected || this.expandedFolders.has(node.path);
+      const row = container.createEl("button", {
+        cls: `ld-tree-row ld-tree-folder ${expanded ? "is-expanded" : ""}`
       });
-      button.createSpan({ cls: "ld-vault-title", text: file.basename });
-      button.createSpan({ cls: "ld-vault-path", text: file.parent?.path ?? "/" });
-      button.addEventListener("click", () => {
-        this.selectedFile = file;
+      row.style.setProperty("--tree-depth", String(depth));
+      row.createSpan({ cls: "ld-tree-chevron", text: expanded ? "v" : ">" });
+      row.createSpan({ cls: "ld-tree-icon", text: "□" });
+      row.createSpan({ cls: "ld-tree-label", text: node.name });
+      row.addEventListener("click", () => {
+        if (this.expandedFolders.has(node.path)) {
+          this.expandedFolders.delete(node.path);
+        } else {
+          this.expandedFolders.add(node.path);
+        }
         void this.render();
       });
+
+      if (expanded) {
+        node.children.forEach((child) => this.renderNoteTreeNode(container, child, depth + 1, forceExpanded));
+      }
+      return;
+    }
+
+    const file = node.file;
+    if (!file) {
+      return;
+    }
+
+    const button = container.createEl("button", {
+      cls: `ld-tree-row ld-tree-file ${this.selectedFile?.path === file.path ? "is-active" : ""}`
+    });
+    button.style.setProperty("--tree-depth", String(depth));
+    button.createSpan({ cls: "ld-tree-spacer", text: "" });
+    button.createSpan({ cls: "ld-tree-icon", text: "○" });
+    button.createSpan({ cls: "ld-tree-label", text: file.basename });
+    button.addEventListener("click", () => {
+      this.selectedFile = file;
+      expandAncestors(file.path, this.expandedFolders);
+      void this.render();
     });
   }
 
@@ -1052,7 +1103,7 @@ class LiquidDashboardView extends ItemView {
     }
   }
 
-  private renderCountdowns(container: HTMLElement) {
+  private renderCountdowns(container: HTMLElement, tasks: DashboardTask[]) {
     const card = container.createDiv({ cls: "ld-card ld-glass" });
     const header = card.createDiv({ cls: "ld-card-header" });
     header.createEl("h2", { text: this.t("countdowns") });
@@ -1061,27 +1112,59 @@ class LiquidDashboardView extends ItemView {
       void this.render();
     });
 
-    if (this.plugin.settings.countdowns.length === 0) {
+    const items = this.getCountdownItems(tasks);
+
+    if (items.length === 0) {
       card.createDiv({ cls: "ld-empty", text: this.t("addDatesInSettings") });
       return;
     }
 
     const list = card.createDiv({ cls: "ld-countdowns" });
-    this.plugin.settings.countdowns
-      .filter((item) => item.name.trim() && isValidDateString(item.date))
-      .sort((a, b) => a.date.localeCompare(b.date))
+    items
       .forEach((item) => {
         const days = diffInDays(today(), parseDate(item.date));
         const row = list.createDiv({ cls: "ld-countdown" });
         const copy = row.createDiv();
         copy.createDiv({ cls: "ld-countdown-name", text: item.name });
-        copy.createDiv({ cls: "ld-countdown-date", text: item.date });
+        const dateText = item.time ? `${item.date} ${item.time}` : item.date;
+        const meta = copy.createDiv({ cls: "ld-countdown-date" });
+        meta.createSpan({ text: dateText });
+        if (item.source === "task") {
+          meta.createSpan({ cls: "ld-countdown-source", text: this.t("fromTask") });
+        }
 
         row.createDiv({
           cls: `ld-countdown-days ${days < 0 ? "is-past" : ""}`,
           text: days === 0 ? this.t("today") : days > 0 ? `${days} ${this.t("days")}` : `${Math.abs(days)} ${this.t("daysAgo")}`
         });
       });
+  }
+
+  private getCountdownItems(tasks: DashboardTask[]) {
+    const manualItems: CountdownDisplayItem[] = this.plugin.settings.countdowns
+      .filter((item) => item.name.trim() && isValidDateString(item.date))
+      .map((item) => ({
+        name: item.name,
+        date: item.date,
+        source: "manual"
+      }));
+
+    const manualKeys = new Set(manualItems.map((item) => `${item.name}::${item.date}`));
+    const taskItems: CountdownDisplayItem[] = tasks
+      .filter((task) => !task.completed && task.date > formatDate(today()))
+      .map((task) => ({
+        name: task.content,
+        date: task.date,
+        time: task.time,
+        source: "task" as const
+      }))
+      .filter((item) => !manualKeys.has(`${item.name}::${item.date}`));
+
+    return [...manualItems, ...taskItems].sort((a, b) => {
+      const aValue = `${a.date} ${a.time ?? "23:59"}`;
+      const bValue = `${b.date} ${b.time ?? "23:59"}`;
+      return aValue.localeCompare(bValue);
+    });
   }
 
   private renderRecentNotes(container: HTMLElement, recentNotes: TFile[]) {
@@ -1275,7 +1358,11 @@ class LiquidDashboardView extends ItemView {
           "Return strict JSON only, with no Markdown fence.",
           "The JSON must be an array of nodes.",
           "Each node must have id, label, and optional parentId.",
-          "Use short stable ASCII ids. The first node should have no parentId."
+          "Use short stable ASCII ids.",
+          "The first node must be the central topic and must have no parentId.",
+          "Only connect a node to its direct conceptual parent.",
+          "Avoid cross-links, duplicate concepts, and long chains of tiny implementation details.",
+          "Prefer 4 to 8 main branches and at most 3 levels deep."
         ].join(" ")
       },
       {
@@ -1283,8 +1370,9 @@ class LiquidDashboardView extends ItemView {
         content: [
           `Document path: ${file.path}`,
           "",
-          "Create a concise mind map for this document.",
-          "Limit it to 20 nodes unless the document truly needs more.",
+          "Create a clean Canvas mind map for this document.",
+          "Limit it to 18 nodes unless the document truly needs more.",
+          "Keep labels short enough to fit inside a node.",
           "",
           source.slice(0, 18000)
         ].join("\n")
@@ -1817,50 +1905,208 @@ async function callOpenAiCompatible(settings: DashboardSettings, messages: AiMes
   return content;
 }
 
-function buildCanvas(nodes: MindmapNode[], sourcePath: string) {
-  const canvasNodes: Array<Record<string, string | number>> = [
-    {
-      id: "source-note",
-      type: "file",
-      file: sourcePath,
-      x: -360,
-      y: 0,
-      width: 260,
-      height: 120
-    }
-  ];
-  const edges: Array<Record<string, string>> = [];
-  const levels = new Map<string, number>();
-  const siblingCount = new Map<number, number>();
+function buildNoteTree(files: TFile[]) {
+  const root: NoteTreeNode = {
+    name: "",
+    path: "",
+    type: "folder",
+    children: []
+  };
 
-  nodes.forEach((node, index) => {
-    const parentLevel = node.parentId ? levels.get(node.parentId) ?? 0 : -1;
-    const level = parentLevel + 1;
-    levels.set(node.id, level);
-    const siblingIndex = siblingCount.get(level) ?? 0;
-    siblingCount.set(level, siblingIndex + 1);
-
-    canvasNodes.push({
-      id: node.id,
-      type: "text",
-      text: node.label,
-      x: level * 320,
-      y: siblingIndex * 150 - 220,
-      width: 240,
-      height: 96
-    });
-
-    edges.push({
-      id: `edge-${index}`,
-      fromNode: node.parentId ?? "source-note",
-      toNode: node.id
+  files.forEach((file) => {
+    const parts = file.path.split("/");
+    let current = root;
+    parts.forEach((part, index) => {
+      const isFile = index === parts.length - 1;
+      const path = parts.slice(0, index + 1).join("/");
+      let child = current.children.find((candidate) => candidate.path === path);
+      if (!child) {
+        child = {
+          name: isFile ? file.basename : part,
+          path,
+          type: isFile ? "file" : "folder",
+          children: [],
+          file: isFile ? file : undefined
+        };
+        current.children.push(child);
+      }
+      current = child;
     });
   });
+
+  sortNoteTree(root);
+  return root;
+}
+
+function sortNoteTree(node: NoteTreeNode) {
+  node.children.sort((a, b) => {
+    if (a.type !== b.type) {
+      return a.type === "folder" ? -1 : 1;
+    }
+    return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+  });
+  node.children.forEach(sortNoteTree);
+}
+
+function isPathInside(filePath: string, folderPath: string) {
+  return filePath === folderPath || filePath.startsWith(`${folderPath}/`);
+}
+
+function expandAncestors(filePath: string, expandedFolders: Set<string>) {
+  const parts = filePath.split("/");
+  parts.pop();
+  let current = "";
+  parts.forEach((part) => {
+    current = current ? `${current}/${part}` : part;
+    expandedFolders.add(current);
+  });
+}
+
+function buildCanvas(nodes: MindmapNode[], sourcePath: string) {
+  const normalizedNodes = normalizeMindmapNodes(nodes);
+  const root = normalizedNodes.find((node) => !node.parentId) ?? normalizedNodes[0] ?? {
+    id: "root",
+    label: sourcePath.split("/").pop()?.replace(/\.md$/i, "") ?? "Mind map"
+  };
+  const children = new Map<string, MindmapNode[]>();
+  normalizedNodes.forEach((node) => {
+    if (!node.parentId || node.id === root.id) {
+      return;
+    }
+    const parentId = normalizedNodes.some((candidate) => candidate.id === node.parentId) ? node.parentId : root.id;
+    const list = children.get(parentId) ?? [];
+    list.push(node);
+    children.set(parentId, list);
+  });
+
+  const rootChildren = children.get(root.id) ?? [];
+  const leftBranches = rootChildren.filter((_, index) => index % 2 === 1);
+  const rightBranches = rootChildren.filter((_, index) => index % 2 === 0);
+  const positions = new Map<string, { x: number; y: number }>();
+  const canvasNodes: Array<Record<string, string | number>> = [];
+  const edges: Array<Record<string, string>> = [];
+
+  positions.set(root.id, { x: 0, y: 0 });
+  canvasNodes.push({
+    id: "source-note",
+    type: "file",
+    file: sourcePath,
+    x: 0,
+    y: -220,
+    width: 280,
+    height: 120
+  });
+  canvasNodes.push({
+    id: root.id,
+    type: "text",
+    text: root.label,
+    x: 0,
+    y: 0,
+    width: 300,
+    height: 110
+  });
+  edges.push({
+    id: "edge-source-root",
+    fromNode: "source-note",
+    toNode: root.id,
+    fromSide: "bottom",
+    toSide: "top"
+  });
+
+  layoutBranches(rightBranches, 1, children, positions, canvasNodes, edges, root.id);
+  layoutBranches(leftBranches, -1, children, positions, canvasNodes, edges, root.id);
 
   return {
     nodes: canvasNodes,
     edges
   };
+}
+
+function normalizeMindmapNodes(nodes: MindmapNode[]) {
+  const seen = new Set<string>();
+  return nodes.map((node, index) => {
+    let id = slugify(node.id || `node-${index}`);
+    while (seen.has(id)) {
+      id = `${id}-${index}`;
+    }
+    seen.add(id);
+    return {
+      id,
+      label: node.label,
+      parentId: node.parentId ? slugify(node.parentId) : undefined
+    };
+  });
+}
+
+function layoutBranches(
+  branches: MindmapNode[],
+  direction: 1 | -1,
+  children: Map<string, MindmapNode[]>,
+  positions: Map<string, { x: number; y: number }>,
+  canvasNodes: Array<Record<string, string | number>>,
+  edges: Array<Record<string, string>>,
+  rootId: string
+) {
+  const branchGap = 190;
+  const childGap = 128;
+  const levelGap = 360;
+  const totalHeight = Math.max(0, branches.length - 1) * branchGap;
+
+  branches.forEach((branch, branchIndex) => {
+    const baseY = branchIndex * branchGap - totalHeight / 2;
+    placeMindmapSubtree(branch, rootId, direction, 1, baseY, children, positions, canvasNodes, edges, childGap, levelGap);
+  });
+}
+
+function placeMindmapSubtree(
+  node: MindmapNode,
+  parentId: string,
+  direction: 1 | -1,
+  level: number,
+  y: number,
+  children: Map<string, MindmapNode[]>,
+  positions: Map<string, { x: number; y: number }>,
+  canvasNodes: Array<Record<string, string | number>>,
+  edges: Array<Record<string, string>>,
+  childGap: number,
+  levelGap: number
+) {
+  const x = direction * level * levelGap;
+  positions.set(node.id, { x, y });
+  canvasNodes.push({
+    id: node.id,
+    type: "text",
+    text: node.label,
+    x,
+    y,
+    width: level === 1 ? 280 : 240,
+    height: level === 1 ? 104 : 88
+  });
+  edges.push({
+    id: `edge-${parentId}-${node.id}`,
+    fromNode: parentId,
+    toNode: node.id,
+    fromSide: direction === 1 ? "right" : "left",
+    toSide: direction === 1 ? "left" : "right"
+  });
+
+  const childNodes = children.get(node.id) ?? [];
+  const totalHeight = Math.max(0, childNodes.length - 1) * childGap;
+  childNodes.forEach((child, index) => {
+    placeMindmapSubtree(
+      child,
+      node.id,
+      direction,
+      level + 1,
+      y + index * childGap - totalHeight / 2,
+      children,
+      positions,
+      canvasNodes,
+      edges,
+      childGap,
+      levelGap
+    );
+  });
 }
 
 function parseMindmapJson(source: string): MindmapNode[] {
