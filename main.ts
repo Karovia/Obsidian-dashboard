@@ -532,6 +532,8 @@ class LiquidDashboardView extends ItemView {
   private showReadingNotes = false;
   private noteSearch = "";
   private expandedFolders = new Set<string>();
+  private collapsedFolders = new Set<string>();
+  private noteListScrollTop = 0;
   private aiQuestion = "";
   private aiResult = "";
   private aiBusy = false;
@@ -844,20 +846,28 @@ class LiquidDashboardView extends ItemView {
     });
     search.addEventListener("input", () => {
       this.noteSearch = search.value;
+      this.noteListScrollTop = 0;
       void this.render();
     });
 
     const query = this.noteSearch.trim().toLowerCase();
     const filtered = notes.filter((file) => !query || file.path.toLowerCase().includes(query));
     const list = sidebar.createDiv({ cls: "ld-vault-list" });
+    list.addEventListener("scroll", () => {
+      this.noteListScrollTop = list.scrollTop;
+    });
     const tree = buildNoteTree(filtered);
     tree.children.forEach((node) => this.renderNoteTreeNode(list, node, 0, Boolean(query)));
+    window.requestAnimationFrame(() => {
+      list.scrollTop = this.noteListScrollTop;
+    });
   }
 
   private renderNoteTreeNode(container: HTMLElement, node: NoteTreeNode, depth: number, forceExpanded: boolean) {
     if (node.type === "folder") {
       const containsSelected = Boolean(this.selectedFile && isPathInside(this.selectedFile.path, node.path));
-      const expanded = forceExpanded || containsSelected || this.expandedFolders.has(node.path);
+      const manuallyCollapsed = this.collapsedFolders.has(node.path);
+      const expanded = forceExpanded || (!manuallyCollapsed && (containsSelected || this.expandedFolders.has(node.path)));
       const row = container.createEl("button", {
         cls: `ld-tree-row ld-tree-folder ${expanded ? "is-expanded" : ""}`
       });
@@ -866,9 +876,12 @@ class LiquidDashboardView extends ItemView {
       row.createSpan({ cls: "ld-tree-icon", text: "□" });
       row.createSpan({ cls: "ld-tree-label", text: node.name });
       row.addEventListener("click", () => {
-        if (this.expandedFolders.has(node.path)) {
+        this.noteListScrollTop = container.scrollTop;
+        if (expanded) {
+          this.collapsedFolders.add(node.path);
           this.expandedFolders.delete(node.path);
         } else {
+          this.collapsedFolders.delete(node.path);
           this.expandedFolders.add(node.path);
         }
         void this.render();
@@ -893,8 +906,9 @@ class LiquidDashboardView extends ItemView {
     button.createSpan({ cls: "ld-tree-icon", text: "○" });
     button.createSpan({ cls: "ld-tree-label", text: file.basename });
     button.addEventListener("click", () => {
+      this.noteListScrollTop = container.scrollTop;
       this.selectedFile = file;
-      expandAncestors(file.path, this.expandedFolders);
+      expandAncestors(file.path, this.expandedFolders, this.collapsedFolders);
       void this.render();
     });
   }
@@ -1952,13 +1966,14 @@ function isPathInside(filePath: string, folderPath: string) {
   return filePath === folderPath || filePath.startsWith(`${folderPath}/`);
 }
 
-function expandAncestors(filePath: string, expandedFolders: Set<string>) {
+function expandAncestors(filePath: string, expandedFolders: Set<string>, collapsedFolders: Set<string>) {
   const parts = filePath.split("/");
   parts.pop();
   let current = "";
   parts.forEach((part) => {
     current = current ? `${current}/${part}` : part;
     expandedFolders.add(current);
+    collapsedFolders.delete(current);
   });
 }
 
