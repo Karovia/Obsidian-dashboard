@@ -18,6 +18,8 @@ type DashboardPage = "home" | "tasks" | "reading" | "notes" | "askai" | "setting
 type TaskScope = "today" | "week" | "next7";
 type TaskPriority = "high" | "medium" | "normal" | "low";
 type AiAction = "summary" | "question" | "mindmap";
+type DashboardLanguage = "zh" | "en";
+type TranslationKey = keyof typeof TEXT.en;
 
 interface CountdownItem {
   name: string;
@@ -25,10 +27,14 @@ interface CountdownItem {
 }
 
 interface DashboardSettings {
+  language: DashboardLanguage;
   taskFilePath: string;
   readingNotesPath: string;
   aiOutputRoot: string;
   autoOpenDashboard: boolean;
+  autoCheckUpdates: boolean;
+  updateRepo: string;
+  updateBranch: string;
   recentNoteLimit: number;
   openAiBaseUrl: string;
   openAiApiKey: string;
@@ -57,37 +63,316 @@ interface MindmapNode {
   parentId?: string;
 }
 
+const TEXT = {
+  en: {
+    navHome: "Home",
+    navTasks: "Tasks",
+    navReading: "Reading",
+    navNotes: "Notes",
+    navAskAi: "Ask AI",
+    navSettings: "Settings",
+    openDashboard: "Open Liquid Dashboard",
+    today: "Today",
+    next7Days: "Next 7 days",
+    overdue: "Overdue",
+    heroSubtitle: "Review today, then shape the next seven days.",
+    quickAddTask: "Quick add task",
+    taskContentPlaceholder: "Task content",
+    add: "Add",
+    tasks: "Tasks",
+    thisWeek: "This week",
+    noTasksInRange: "No tasks in this range yet.",
+    reading: "Reading",
+    showNotes: "Show notes",
+    hideNotes: "Hide notes",
+    allNotes: "All notes",
+    searchNotes: "Search notes",
+    noMarkdownSelected: "No Markdown note selected.",
+    openInObsidian: "Open in Obsidian",
+    readingNote: "Reading note",
+    readingNotePlaceholder: "Write notes for the current article...",
+    saveNote: "Save note",
+    readingNotes: "Reading Notes",
+    openFile: "Open file",
+    noReadingNotes: "_No reading notes yet._",
+    askAi: "Ask AI",
+    noModel: "No model",
+    currentDocument: "Current document",
+    noNoteSelected: "No note selected",
+    summarize: "Summarize",
+    generateMindmap: "Generate Canvas mindmap",
+    askQuestionPlaceholder: "Ask a question about the current document...",
+    askAndSave: "Ask and save",
+    aiThinking: "AI is thinking...",
+    dashboardSettings: "Dashboard settings",
+    taskPathLabel: "Tasks",
+    readingNotesPathLabel: "Reading notes",
+    aiOutputsPathLabel: "AI outputs",
+    openPluginSettings: "Open plugin settings",
+    aiModel: "AI model",
+    notSet: "Not set",
+    apiKeySaved: "API key: saved in plugin data",
+    apiKeyNotSet: "API key: not set",
+    countdowns: "Countdowns",
+    settings: "Settings",
+    addDatesInSettings: "Add important dates in settings.",
+    days: "days",
+    daysAgo: "days ago",
+    recentNotes: "Recent notes",
+    noMarkdownNotes: "No Markdown notes yet.",
+    taskStorage: "Task storage",
+    openTaskFile: "Open task file",
+    taskContentRequired: "Task content is required.",
+    chooseValidDate: "Please choose a valid date.",
+    chooseValidTime: "Please choose a valid time.",
+    taskAdded: "Task added.",
+    writeNoteBeforeSaving: "Write a note before saving.",
+    noSourceNote: "No source note",
+    source: "Source",
+    readingNoteSaved: "Reading note saved.",
+    selectNoteFirst: "Select a note first.",
+    configureAiFirst: "Configure an OpenAI-compatible model in plugin settings first.",
+    askQuestionFirst: "Ask a question first.",
+    canvasMindmapSaved: "Canvas mindmap saved.",
+    aiOutputSaved: "AI output saved.",
+    aiRequestFailed: "AI request failed.",
+    aiSummary: "AI Summary",
+    aiQuestion: "AI Question",
+    question: "Question",
+    aiOutputsHeading: "AI Outputs",
+    aiSummaryLink: "AI summary",
+    aiQuestionLink: "AI question",
+    aiMindmapLink: "AI Canvas mindmap",
+    priorityHigh: "High",
+    priorityMedium: "Medium",
+    priorityNormal: "Normal",
+    priorityLow: "Low",
+    monday: "Mon",
+    tuesday: "Tue",
+    wednesday: "Wed",
+    thursday: "Thu",
+    friday: "Fri",
+    saturday: "Sat",
+    sunday: "Sun",
+    language: "Language",
+    languageDesc: "Switch all dashboard and settings text.",
+    languageZh: "Chinese",
+    languageEn: "English",
+    taskFile: "Task file",
+    taskFileDesc: "All dashboard tasks are saved in this Markdown file.",
+    readingNotesFile: "Reading notes file",
+    readingNotesFileDesc: "Notes written in the reading pane are appended here.",
+    aiOutputRoot: "AI output root folder",
+    aiOutputRootDesc: "Each source document gets a same-named folder under this root.",
+    openOnStartup: "Open dashboard on startup",
+    openOnStartupDesc: "Show the dashboard when Obsidian finishes loading.",
+    recentNoteCount: "Recent note count",
+    recentNoteCountDesc: "How many recent notes are shown on the home page.",
+    openAiCompatibleModel: "OpenAI-compatible model",
+    apiBaseUrl: "API base URL",
+    apiBaseUrlDesc: "Example: https://api.openai.com/v1 or another OpenAI-compatible endpoint.",
+    apiKey: "API key",
+    apiKeyDesc: "Saved in this plugin's Obsidian data. It is convenient, not strongly encrypted.",
+    model: "Model",
+    modelDesc: "Any model name accepted by your OpenAI-compatible provider.",
+    updateSettings: "Remote updates",
+    updateRepo: "GitHub repository",
+    updateRepoDesc: "Repository used for plugin updates, in owner/name format.",
+    updateBranch: "Update branch",
+    updateBranchDesc: "Branch to read manifest.json, main.js, and styles.css from.",
+    autoCheckUpdates: "Check updates on startup",
+    autoCheckUpdatesDesc: "Shows a notice when a newer remote version is available.",
+    checkAndInstallUpdate: "Check and install update",
+    updateChecking: "Checking remote update...",
+    updateAlreadyLatest: "Already on the latest version.",
+    updateAvailable: "Update available",
+    updateInstalled: "Update installed. Restart Obsidian or reload plugins to apply it.",
+    updateFailed: "Update failed.",
+    countdownsDesc: "Add a name and date. The dashboard calculates days from the system date.",
+    countdown: "Countdown",
+    name: "Name",
+    delete: "Delete",
+    addCountdown: "Add countdown",
+    newCountdown: "New countdown",
+    greetingLate: "Late night, plan gently",
+    greetingMorning: "Good morning",
+    greetingAfternoon: "Good afternoon",
+    greetingEvening: "Good evening",
+    yesterday: "Yesterday"
+  },
+  zh: {
+    navHome: "首页",
+    navTasks: "任务",
+    navReading: "阅读",
+    navNotes: "笔记",
+    navAskAi: "Ask AI",
+    navSettings: "设置",
+    openDashboard: "打开 Liquid Dashboard",
+    today: "今天",
+    next7Days: "未来 7 天",
+    overdue: "已逾期",
+    heroSubtitle: "先看今天，再安排接下来的一周。",
+    quickAddTask: "快速添加任务",
+    taskContentPlaceholder: "任务内容",
+    add: "添加",
+    tasks: "任务",
+    thisWeek: "本周",
+    noTasksInRange: "这个时间段还没有任务。",
+    reading: "阅读",
+    showNotes: "显示笔记",
+    hideNotes: "隐藏笔记",
+    allNotes: "全部笔记",
+    searchNotes: "搜索笔记",
+    noMarkdownSelected: "还没有选择 Markdown 笔记。",
+    openInObsidian: "在 Obsidian 中打开",
+    readingNote: "阅读笔记",
+    readingNotePlaceholder: "为当前文章写一点笔记...",
+    saveNote: "保存笔记",
+    readingNotes: "阅读笔记",
+    openFile: "打开文件",
+    noReadingNotes: "_还没有阅读笔记。_",
+    askAi: "Ask AI",
+    noModel: "未设置模型",
+    currentDocument: "当前文档",
+    noNoteSelected: "未选择笔记",
+    summarize: "总结",
+    generateMindmap: "生成 Canvas 思维导图",
+    askQuestionPlaceholder: "针对当前文档提问...",
+    askAndSave: "提问并保存",
+    aiThinking: "AI 正在思考...",
+    dashboardSettings: "Dashboard 设置",
+    taskPathLabel: "任务",
+    readingNotesPathLabel: "阅读笔记",
+    aiOutputsPathLabel: "AI 输出",
+    openPluginSettings: "打开插件设置",
+    aiModel: "AI 模型",
+    notSet: "未设置",
+    apiKeySaved: "API key：已保存在插件数据中",
+    apiKeyNotSet: "API key：未设置",
+    countdowns: "倒计时",
+    settings: "设置",
+    addDatesInSettings: "在设置里添加重要日期。",
+    days: "天",
+    daysAgo: "天前",
+    recentNotes: "最近笔记",
+    noMarkdownNotes: "还没有 Markdown 笔记。",
+    taskStorage: "任务存储",
+    openTaskFile: "打开任务文件",
+    taskContentRequired: "请先输入任务内容。",
+    chooseValidDate: "请选择有效日期。",
+    chooseValidTime: "请选择有效时间。",
+    taskAdded: "任务已添加。",
+    writeNoteBeforeSaving: "请先写一点笔记。",
+    noSourceNote: "无来源笔记",
+    source: "来源",
+    readingNoteSaved: "阅读笔记已保存。",
+    selectNoteFirst: "请先选择一篇笔记。",
+    configureAiFirst: "请先在插件设置里配置 OpenAI-compatible 模型。",
+    askQuestionFirst: "请先输入问题。",
+    canvasMindmapSaved: "Canvas 思维导图已保存。",
+    aiOutputSaved: "AI 输出已保存。",
+    aiRequestFailed: "AI 请求失败。",
+    aiSummary: "AI 总结",
+    aiQuestion: "AI 问答",
+    question: "问题",
+    aiOutputsHeading: "AI 输出",
+    aiSummaryLink: "AI 总结",
+    aiQuestionLink: "AI 问答",
+    aiMindmapLink: "AI Canvas 思维导图",
+    priorityHigh: "高",
+    priorityMedium: "中",
+    priorityNormal: "普通",
+    priorityLow: "低",
+    monday: "一",
+    tuesday: "二",
+    wednesday: "三",
+    thursday: "四",
+    friday: "五",
+    saturday: "六",
+    sunday: "日",
+    language: "语言",
+    languageDesc: "切换整个 Dashboard 和设置页的显示语言。",
+    languageZh: "中文",
+    languageEn: "英文",
+    taskFile: "任务文件",
+    taskFileDesc: "所有 Dashboard 任务都会保存到这个 Markdown 文件。",
+    readingNotesFile: "阅读笔记文件",
+    readingNotesFileDesc: "阅读面板里写的笔记会追加保存到这里。",
+    aiOutputRoot: "AI 输出根目录",
+    aiOutputRootDesc: "每篇源文档会在这个目录下创建一个同名文件夹。",
+    openOnStartup: "启动时自动打开 Dashboard",
+    openOnStartupDesc: "Obsidian 加载完成后显示 Dashboard。",
+    recentNoteCount: "最近笔记数量",
+    recentNoteCountDesc: "首页显示多少篇最近笔记。",
+    openAiCompatibleModel: "OpenAI-compatible 模型",
+    apiBaseUrl: "API Base URL",
+    apiBaseUrlDesc: "例如：https://api.openai.com/v1，也可以填写其他兼容端点。",
+    apiKey: "API Key",
+    apiKeyDesc: "保存在 Obsidian 插件数据里，方便使用，但不是强加密。",
+    model: "模型",
+    modelDesc: "填写你的 OpenAI-compatible 服务支持的模型名。",
+    updateSettings: "远程更新",
+    updateRepo: "GitHub 仓库",
+    updateRepoDesc: "用于更新插件的仓库，格式为 owner/name。",
+    updateBranch: "更新分支",
+    updateBranchDesc: "从这个分支读取 manifest.json、main.js 和 styles.css。",
+    autoCheckUpdates: "启动时检查更新",
+    autoCheckUpdatesDesc: "发现远程版本更新时显示提示。",
+    checkAndInstallUpdate: "检查并安装更新",
+    updateChecking: "正在检查远程更新...",
+    updateAlreadyLatest: "当前已经是最新版本。",
+    updateAvailable: "发现新版本",
+    updateInstalled: "更新已安装。请重启 Obsidian 或重新加载插件后生效。",
+    updateFailed: "更新失败。",
+    countdownsDesc: "添加名称和日期，Dashboard 会根据系统日期自动计算剩余天数。",
+    countdown: "倒计时",
+    name: "名称",
+    delete: "删除",
+    addCountdown: "添加倒计时",
+    newCountdown: "新的倒计时",
+    greetingLate: "夜深了，轻一点安排",
+    greetingMorning: "早上好",
+    greetingAfternoon: "下午好",
+    greetingEvening: "晚上好",
+    yesterday: "昨天"
+  }
+} as const;
+
 const DEFAULT_SETTINGS: DashboardSettings = {
+  language: "zh",
   taskFilePath: "Dashboard/Tasks.md",
   readingNotesPath: "Dashboard/Reading Notes.md",
   aiOutputRoot: "AI Outputs",
   autoOpenDashboard: true,
+  autoCheckUpdates: true,
+  updateRepo: "Karovia/Obsidian-dashboard",
+  updateBranch: "main",
   recentNoteLimit: 8,
   openAiBaseUrl: "https://api.openai.com/v1",
   openAiApiKey: "",
   openAiModel: "gpt-4o-mini",
   countdowns: [
     {
-      name: "Example deadline",
+      name: "示例截止日",
       date: formatDate(addDays(today(), 7))
     }
   ]
 };
 
-const PRIORITY_META: Record<TaskPriority, { label: string; marker: string; rank: number }> = {
-  high: { label: "High", marker: "⏫", rank: 3 },
-  medium: { label: "Medium", marker: "🔼", rank: 2 },
-  normal: { label: "Normal", marker: "", rank: 1 },
-  low: { label: "Low", marker: "🔽", rank: 0 }
+const PRIORITY_META: Record<TaskPriority, { labelKey: TranslationKey; marker: string; rank: number }> = {
+  high: { labelKey: "priorityHigh", marker: "⏫", rank: 3 },
+  medium: { labelKey: "priorityMedium", marker: "🔼", rank: 2 },
+  normal: { labelKey: "priorityNormal", marker: "", rank: 1 },
+  low: { labelKey: "priorityLow", marker: "🔽", rank: 0 }
 };
 
-const PAGE_META: Array<{ id: DashboardPage; label: string }> = [
-  { id: "home", label: "Home" },
-  { id: "tasks", label: "Tasks" },
-  { id: "reading", label: "Reading" },
-  { id: "notes", label: "Notes" },
-  { id: "askai", label: "Ask AI" },
-  { id: "settings", label: "Settings" }
+const PAGE_META: Array<{ id: DashboardPage; labelKey: TranslationKey }> = [
+  { id: "home", labelKey: "navHome" },
+  { id: "tasks", labelKey: "navTasks" },
+  { id: "reading", labelKey: "navReading" },
+  { id: "notes", labelKey: "navNotes" },
+  { id: "askai", labelKey: "navAskAi" },
+  { id: "settings", labelKey: "navSettings" }
 ];
 
 export default class LiquidDashboardPlugin extends Plugin {
@@ -101,13 +386,13 @@ export default class LiquidDashboardPlugin extends Plugin {
       (leaf) => new LiquidDashboardView(leaf, this)
     );
 
-    this.addRibbonIcon("layout-dashboard", "Open Liquid Dashboard", () => {
+    this.addRibbonIcon("layout-dashboard", this.t("openDashboard"), () => {
       void this.activateDashboard();
     });
 
     this.addCommand({
       id: "open-liquid-dashboard",
-      name: "Open Liquid Dashboard",
+      name: this.t("openDashboard"),
       callback: () => {
         void this.activateDashboard();
       }
@@ -118,6 +403,14 @@ export default class LiquidDashboardPlugin extends Plugin {
     if (this.settings.autoOpenDashboard) {
       this.app.workspace.onLayoutReady(() => {
         void this.activateDashboard();
+      });
+    }
+
+    if (this.settings.autoCheckUpdates) {
+      this.app.workspace.onLayoutReady(() => {
+        window.setTimeout(() => {
+          void this.checkForUpdate(false).catch(() => undefined);
+        }, 3500);
       });
     }
   }
@@ -159,6 +452,57 @@ export default class LiquidDashboardPlugin extends Plugin {
       }
     });
   }
+
+  t(key: TranslationKey) {
+    return translate(this.settings.language, key);
+  }
+
+  async checkForUpdate(install: boolean) {
+    const remoteManifest = await this.fetchRemoteText("manifest.json");
+    const manifest = JSON.parse(remoteManifest) as { version?: string };
+    const remoteVersion = manifest.version ?? "0.0.0";
+
+    if (compareVersions(remoteVersion, this.manifest.version) <= 0) {
+      if (install) {
+        new Notice(this.t("updateAlreadyLatest"));
+      }
+      return false;
+    }
+
+    if (!install) {
+      new Notice(`${this.t("updateAvailable")}: ${remoteVersion}`);
+      return true;
+    }
+
+    await this.installRemoteUpdate(remoteManifest);
+    new Notice(this.t("updateInstalled"));
+    return true;
+  }
+
+  private async installRemoteUpdate(remoteManifest: string) {
+    const [mainJs, stylesCss] = await Promise.all([
+      this.fetchRemoteText("main.js"),
+      this.fetchRemoteText("styles.css")
+    ]);
+    const pluginDir = this.getPluginDir();
+    await this.app.vault.adapter.write(normalizePath(`${pluginDir}/manifest.json`), remoteManifest);
+    await this.app.vault.adapter.write(normalizePath(`${pluginDir}/main.js`), mainJs);
+    await this.app.vault.adapter.write(normalizePath(`${pluginDir}/styles.css`), stylesCss);
+  }
+
+  private async fetchRemoteText(fileName: string) {
+    const repo = this.settings.updateRepo.trim() || DEFAULT_SETTINGS.updateRepo;
+    const branch = this.settings.updateBranch.trim() || DEFAULT_SETTINGS.updateBranch;
+    const response = await requestUrl({
+      url: `https://raw.githubusercontent.com/${repo}/${branch}/${fileName}`,
+      method: "GET"
+    });
+    return response.text;
+  }
+
+  private getPluginDir() {
+    return (this.manifest as { dir?: string }).dir ?? normalizePath(`.obsidian/plugins/${this.manifest.id}`);
+  }
 }
 
 class LiquidDashboardView extends ItemView {
@@ -183,6 +527,14 @@ class LiquidDashboardView extends ItemView {
   constructor(leaf: WorkspaceLeaf, plugin: LiquidDashboardPlugin) {
     super(leaf);
     this.plugin = plugin;
+  }
+
+  private t(key: TranslationKey) {
+    return this.plugin.t(key);
+  }
+
+  private priorityLabel(priority: TaskPriority) {
+    return this.t(PRIORITY_META[priority].labelKey);
   }
 
   getViewType() {
@@ -260,7 +612,7 @@ class LiquidDashboardView extends ItemView {
     PAGE_META.forEach((item) => {
       const button = tabs.createEl("button", {
         cls: `ld-main-tab ${this.page === item.id ? "is-active" : ""}`,
-        text: item.label
+        text: this.t(item.labelKey)
       });
       button.addEventListener("click", () => {
         this.page = item.id;
@@ -278,7 +630,7 @@ class LiquidDashboardView extends ItemView {
 
     this.renderQuickAdd(left);
     this.renderTaskPanel(left, tasks);
-    await this.renderSelectedNotePreview(left, notes[0] ?? null, "Latest note");
+    await this.renderSelectedNotePreview(left, notes[0] ?? null, this.t("recentNotes"));
 
     this.renderCalendar(right, tasks);
     this.renderCountdowns(right);
@@ -292,17 +644,17 @@ class LiquidDashboardView extends ItemView {
 
     const hero = container.createDiv({ cls: "ld-hero ld-glass" });
     const copy = hero.createDiv();
-    copy.createDiv({ cls: "ld-kicker", text: "Today" });
-    copy.createEl("h1", { text: getGreeting() });
+    copy.createDiv({ cls: "ld-kicker", text: this.t("today") });
+    copy.createEl("h1", { text: getGreeting(this.plugin.settings.language) });
     copy.createDiv({
       cls: "ld-subtitle",
-      text: "Review today, then shape the next seven days."
+      text: this.t("heroSubtitle")
     });
 
     const stats = hero.createDiv({ cls: "ld-stats" });
-    this.renderStat(stats, String(todayTasks.filter((task) => !task.completed).length), "Today");
-    this.renderStat(stats, String(nextSevenTasks.filter((task) => !task.completed).length), "Next 7 days");
-    this.renderStat(stats, String(overdueTasks.length), "Overdue");
+    this.renderStat(stats, String(todayTasks.filter((task) => !task.completed).length), this.t("today"));
+    this.renderStat(stats, String(nextSevenTasks.filter((task) => !task.completed).length), this.t("next7Days"));
+    this.renderStat(stats, String(overdueTasks.length), this.t("overdue"));
   }
 
   private renderStat(container: HTMLElement, value: string, label: string) {
@@ -324,14 +676,14 @@ class LiquidDashboardView extends ItemView {
 
   private renderQuickAdd(container: HTMLElement) {
     const card = container.createDiv({ cls: "ld-card ld-glass ld-quick-add" });
-    card.createEl("h2", { text: "Quick add task" });
+    card.createEl("h2", { text: this.t("quickAddTask") });
 
     const form = card.createEl("form", { cls: "ld-task-form ld-task-form-time" });
     this.taskInput = form.createEl("input", {
       cls: "ld-input ld-task-input",
       attr: {
         type: "text",
-        placeholder: "Task content"
+        placeholder: this.t("taskContentPlaceholder")
       }
     });
 
@@ -354,7 +706,7 @@ class LiquidDashboardView extends ItemView {
     this.taskPrioritySelect = form.createEl("select", { cls: "ld-input ld-select" });
     (Object.keys(PRIORITY_META) as TaskPriority[]).forEach((priority) => {
       this.taskPrioritySelect?.createEl("option", {
-        text: PRIORITY_META[priority].label,
+        text: this.priorityLabel(priority),
         value: priority
       });
     });
@@ -362,7 +714,7 @@ class LiquidDashboardView extends ItemView {
 
     form.createEl("button", {
       cls: "ld-button ld-button-primary",
-      text: "Add",
+      text: this.t("add"),
       attr: {
         type: "submit"
       }
@@ -377,13 +729,13 @@ class LiquidDashboardView extends ItemView {
   private renderTaskPanel(container: HTMLElement, tasks: DashboardTask[]) {
     const card = container.createDiv({ cls: "ld-card ld-glass" });
     const header = card.createDiv({ cls: "ld-card-header" });
-    header.createEl("h2", { text: "Tasks" });
+    header.createEl("h2", { text: this.t("tasks") });
 
     const tabs = header.createDiv({ cls: "ld-tabs" });
     const modes: Array<{ mode: TaskScope; label: string }> = [
-      { mode: "today", label: this.selectedDate === formatDate(today()) ? "Today" : this.selectedDate },
-      { mode: "week", label: "This week" },
-      { mode: "next7", label: "Next 7 days" }
+      { mode: "today", label: this.selectedDate === formatDate(today()) ? this.t("today") : this.selectedDate },
+      { mode: "week", label: this.t("thisWeek") },
+      { mode: "next7", label: this.t("next7Days") }
     ];
 
     modes.forEach((item) => {
@@ -401,7 +753,7 @@ class LiquidDashboardView extends ItemView {
     const visibleTasks = this.getVisibleTasks(tasks);
 
     if (visibleTasks.length === 0) {
-      taskList.createDiv({ cls: "ld-empty", text: "No tasks in this range yet." });
+      taskList.createDiv({ cls: "ld-empty", text: this.t("noTasksInRange") });
       return;
     }
 
@@ -427,21 +779,21 @@ class LiquidDashboardView extends ItemView {
 
     const meta = body.createDiv({ cls: "ld-task-meta" });
     meta.createSpan({ text: `${formatShortDate(parseDate(task.date))} ${task.time}`.trim() });
-    meta.createSpan({ cls: `ld-priority ld-priority-${task.priority}`, text: PRIORITY_META[task.priority].label });
+    meta.createSpan({ cls: `ld-priority ld-priority-${task.priority}`, text: this.priorityLabel(task.priority) });
 
     if (!task.completed && this.isTaskOverdue(task)) {
-      meta.createSpan({ cls: "ld-overdue", text: "Overdue" });
+      meta.createSpan({ cls: "ld-overdue", text: this.t("overdue") });
     }
   }
 
   private async renderReadingPage(container: HTMLElement, notes: TFile[]) {
     const card = container.createDiv({ cls: "ld-card ld-glass ld-reader-shell" });
     const header = card.createDiv({ cls: "ld-card-header" });
-    header.createEl("h2", { text: "Reading" });
+    header.createEl("h2", { text: this.t("reading") });
     const actions = header.createDiv({ cls: "ld-actions" });
     actions.createEl("button", {
       cls: `ld-button ${this.showReadingNotes ? "ld-button-primary" : ""}`,
-      text: this.showReadingNotes ? "Hide notes" : "Show notes"
+      text: this.showReadingNotes ? this.t("hideNotes") : this.t("showNotes")
     }).addEventListener("click", () => {
       this.showReadingNotes = !this.showReadingNotes;
       void this.render();
@@ -463,12 +815,12 @@ class LiquidDashboardView extends ItemView {
 
   private renderVaultNoteList(container: HTMLElement, notes: TFile[]) {
     const sidebar = container.createDiv({ cls: "ld-note-list" });
-    sidebar.createDiv({ cls: "ld-panel-title", text: "All notes" });
+    sidebar.createDiv({ cls: "ld-panel-title", text: this.t("allNotes") });
     const search = sidebar.createEl("input", {
       cls: "ld-input",
       attr: {
         type: "search",
-        placeholder: "Search notes",
+        placeholder: this.t("searchNotes"),
         value: this.noteSearch
       }
     });
@@ -509,14 +861,14 @@ class LiquidDashboardView extends ItemView {
     }
 
     if (!file) {
-      card.createDiv({ cls: "ld-empty", text: "No Markdown note selected." });
+      card.createDiv({ cls: "ld-empty", text: this.t("noMarkdownSelected") });
       return;
     }
 
     if (embedded) {
       const header = card.createDiv({ cls: "ld-article-header" });
       header.createEl("h2", { text: file.basename });
-      header.createEl("button", { cls: "ld-button", text: "Open in Obsidian" }).addEventListener("click", () => {
+      header.createEl("button", { cls: "ld-button", text: this.t("openInObsidian") }).addEventListener("click", () => {
         void this.app.workspace.getLeaf("tab").openFile(file);
       });
     }
@@ -528,14 +880,14 @@ class LiquidDashboardView extends ItemView {
 
   private renderReadingNoteEditor(container: HTMLElement) {
     const panel = container.createDiv({ cls: "ld-reading-note-panel" });
-    panel.createDiv({ cls: "ld-panel-title", text: "Reading note" });
+    panel.createDiv({ cls: "ld-panel-title", text: this.t("readingNote") });
     this.readingNoteInput = panel.createEl("textarea", {
       cls: "ld-textarea",
       attr: {
-        placeholder: "Write notes for the current article..."
+        placeholder: this.t("readingNotePlaceholder")
       }
     });
-    panel.createEl("button", { cls: "ld-button ld-button-primary", text: "Save note" }).addEventListener("click", () => {
+    panel.createEl("button", { cls: "ld-button ld-button-primary", text: this.t("saveNote") }).addEventListener("click", () => {
       void this.saveReadingNote();
     });
   }
@@ -547,8 +899,8 @@ class LiquidDashboardView extends ItemView {
 
     const card = left.createDiv({ cls: "ld-card ld-glass" });
     const header = card.createDiv({ cls: "ld-card-header" });
-    header.createEl("h2", { text: "Reading Notes" });
-    header.createEl("button", { cls: "ld-button", text: "Open file" }).addEventListener("click", async () => {
+    header.createEl("h2", { text: this.t("readingNotes") });
+    header.createEl("button", { cls: "ld-button", text: this.t("openFile") }).addEventListener("click", async () => {
       const file = await this.getOrCreateFile(this.plugin.settings.readingNotesPath);
       void this.app.workspace.getLeaf("tab").openFile(file);
     });
@@ -556,7 +908,7 @@ class LiquidDashboardView extends ItemView {
     const file = await this.getOrCreateFile(this.plugin.settings.readingNotesPath);
     const source = await this.app.vault.cachedRead(file);
     const preview = card.createDiv({ cls: "ld-note-preview markdown-rendered" });
-    await MarkdownRenderer.renderMarkdown(source || "_No reading notes yet._", preview, file.path, this);
+    await MarkdownRenderer.renderMarkdown(source || this.t("noReadingNotes"), preview, file.path, this);
 
     this.renderRecentNotes(right, this.getReadableNotes());
   }
@@ -572,40 +924,40 @@ class LiquidDashboardView extends ItemView {
 
     const card = left.createDiv({ cls: "ld-card ld-glass" });
     const header = card.createDiv({ cls: "ld-card-header" });
-    header.createEl("h2", { text: "Ask AI" });
+    header.createEl("h2", { text: this.t("askAi") });
     header.createDiv({
       cls: "ld-model-pill",
-      text: this.plugin.settings.openAiModel || "No model"
+      text: this.plugin.settings.openAiModel || this.t("noModel")
     });
 
     const target = card.createDiv({ cls: "ld-ai-target" });
-    target.createDiv({ cls: "ld-panel-title", text: "Current document" });
-    target.createDiv({ cls: "ld-ai-current-file", text: this.selectedFile?.path ?? "No note selected" });
+    target.createDiv({ cls: "ld-panel-title", text: this.t("currentDocument") });
+    target.createDiv({ cls: "ld-ai-current-file", text: this.selectedFile?.path ?? this.t("noNoteSelected") });
 
     const actions = card.createDiv({ cls: "ld-ai-actions" });
-    actions.createEl("button", { cls: "ld-button ld-button-primary", text: "Summarize" }).addEventListener("click", () => {
+    actions.createEl("button", { cls: "ld-button ld-button-primary", text: this.t("summarize") }).addEventListener("click", () => {
       void this.runAiAction("summary");
     });
-    actions.createEl("button", { cls: "ld-button", text: "Generate Canvas mindmap" }).addEventListener("click", () => {
+    actions.createEl("button", { cls: "ld-button", text: this.t("generateMindmap") }).addEventListener("click", () => {
       void this.runAiAction("mindmap");
     });
 
     const question = card.createEl("textarea", {
       cls: "ld-textarea ld-ai-question",
       attr: {
-        placeholder: "Ask a question about the current document..."
+        placeholder: this.t("askQuestionPlaceholder")
       }
     });
     question.value = this.aiQuestion;
     question.addEventListener("input", () => {
       this.aiQuestion = question.value;
     });
-    card.createEl("button", { cls: "ld-button ld-button-primary", text: "Ask and save" }).addEventListener("click", () => {
+    card.createEl("button", { cls: "ld-button ld-button-primary", text: this.t("askAndSave") }).addEventListener("click", () => {
       void this.runAiAction("question");
     });
 
     if (this.aiBusy) {
-      card.createDiv({ cls: "ld-empty", text: "AI is thinking..." });
+      card.createDiv({ cls: "ld-empty", text: this.t("aiThinking") });
     } else if (this.aiResult) {
       const result = card.createDiv({ cls: "ld-ai-result markdown-rendered" });
       await MarkdownRenderer.renderMarkdown(this.aiResult, result, this.selectedFile?.path ?? "", this);
@@ -620,23 +972,23 @@ class LiquidDashboardView extends ItemView {
     const right = grid.createDiv({ cls: "ld-stack ld-stack-side" });
 
     const paths = left.createDiv({ cls: "ld-card ld-glass" });
-    paths.createEl("h2", { text: "Dashboard settings" });
-    paths.createDiv({ cls: "ld-setting-row", text: `Tasks: ${this.plugin.settings.taskFilePath}` });
-    paths.createDiv({ cls: "ld-setting-row", text: `Reading notes: ${this.plugin.settings.readingNotesPath}` });
-    paths.createDiv({ cls: "ld-setting-row", text: `AI outputs: ${this.plugin.settings.aiOutputRoot}` });
-    paths.createEl("button", { cls: "ld-button ld-button-primary", text: "Open plugin settings" }).addEventListener("click", () => {
+    paths.createEl("h2", { text: this.t("dashboardSettings") });
+    paths.createDiv({ cls: "ld-setting-row", text: `${this.t("taskPathLabel")}: ${this.plugin.settings.taskFilePath}` });
+    paths.createDiv({ cls: "ld-setting-row", text: `${this.t("readingNotesPathLabel")}: ${this.plugin.settings.readingNotesPath}` });
+    paths.createDiv({ cls: "ld-setting-row", text: `${this.t("aiOutputsPathLabel")}: ${this.plugin.settings.aiOutputRoot}` });
+    paths.createEl("button", { cls: "ld-button ld-button-primary", text: this.t("openPluginSettings") }).addEventListener("click", () => {
       const setting = (this.app as App & { setting?: { open: () => void; openTabById: (id: string) => void } }).setting;
       setting?.open();
       setting?.openTabById(this.plugin.manifest.id);
     });
 
     const model = right.createDiv({ cls: "ld-card ld-glass" });
-    model.createEl("h2", { text: "AI model" });
-    model.createDiv({ cls: "ld-setting-row", text: `Base URL: ${this.plugin.settings.openAiBaseUrl || "Not set"}` });
-    model.createDiv({ cls: "ld-setting-row", text: `Model: ${this.plugin.settings.openAiModel || "Not set"}` });
+    model.createEl("h2", { text: this.t("aiModel") });
+    model.createDiv({ cls: "ld-setting-row", text: `Base URL: ${this.plugin.settings.openAiBaseUrl || this.t("notSet")}` });
+    model.createDiv({ cls: "ld-setting-row", text: `${this.t("model")}: ${this.plugin.settings.openAiModel || this.t("notSet")}` });
     model.createDiv({
       cls: "ld-setting-row",
-      text: this.plugin.settings.openAiApiKey ? "API key: saved in plugin data" : "API key: not set"
+      text: this.plugin.settings.openAiApiKey ? this.t("apiKeySaved") : this.t("apiKeyNotSet")
     });
   }
 
@@ -657,7 +1009,15 @@ class LiquidDashboardView extends ItemView {
     });
 
     const weekdays = card.createDiv({ cls: "ld-weekdays" });
-    ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].forEach((day) => {
+    [
+      this.t("monday"),
+      this.t("tuesday"),
+      this.t("wednesday"),
+      this.t("thursday"),
+      this.t("friday"),
+      this.t("saturday"),
+      this.t("sunday")
+    ].forEach((day) => {
       weekdays.createDiv({ text: day });
     });
 
@@ -695,14 +1055,14 @@ class LiquidDashboardView extends ItemView {
   private renderCountdowns(container: HTMLElement) {
     const card = container.createDiv({ cls: "ld-card ld-glass" });
     const header = card.createDiv({ cls: "ld-card-header" });
-    header.createEl("h2", { text: "Countdowns" });
-    header.createEl("button", { cls: "ld-button", text: "Settings" }).addEventListener("click", () => {
+    header.createEl("h2", { text: this.t("countdowns") });
+    header.createEl("button", { cls: "ld-button", text: this.t("settings") }).addEventListener("click", () => {
       this.page = "settings";
       void this.render();
     });
 
     if (this.plugin.settings.countdowns.length === 0) {
-      card.createDiv({ cls: "ld-empty", text: "Add important dates in settings." });
+      card.createDiv({ cls: "ld-empty", text: this.t("addDatesInSettings") });
       return;
     }
 
@@ -719,7 +1079,7 @@ class LiquidDashboardView extends ItemView {
 
         row.createDiv({
           cls: `ld-countdown-days ${days < 0 ? "is-past" : ""}`,
-          text: days === 0 ? "Today" : days > 0 ? `${days} days` : `${Math.abs(days)} days ago`
+          text: days === 0 ? this.t("today") : days > 0 ? `${days} ${this.t("days")}` : `${Math.abs(days)} ${this.t("daysAgo")}`
         });
       });
   }
@@ -727,10 +1087,10 @@ class LiquidDashboardView extends ItemView {
   private renderRecentNotes(container: HTMLElement, recentNotes: TFile[]) {
     const card = container.createDiv({ cls: "ld-card ld-glass" });
     const header = card.createDiv({ cls: "ld-card-header" });
-    header.createEl("h2", { text: "Recent notes" });
+    header.createEl("h2", { text: this.t("recentNotes") });
 
     if (recentNotes.length === 0) {
-      card.createDiv({ cls: "ld-empty", text: "No Markdown notes yet." });
+      card.createDiv({ cls: "ld-empty", text: this.t("noMarkdownNotes") });
       return;
     }
 
@@ -738,7 +1098,7 @@ class LiquidDashboardView extends ItemView {
     recentNotes.slice(0, this.plugin.settings.recentNoteLimit).forEach((file) => {
       const button = list.createEl("button", { cls: "ld-recent-note" });
       button.createSpan({ cls: "ld-recent-title", text: file.basename });
-      button.createSpan({ cls: "ld-recent-time", text: formatRelativeDate(new Date(file.stat.mtime)) });
+      button.createSpan({ cls: "ld-recent-time", text: formatRelativeDate(new Date(file.stat.mtime), this.plugin.settings.language) });
 
       button.addEventListener("click", () => {
         this.selectedFile = file;
@@ -750,9 +1110,9 @@ class LiquidDashboardView extends ItemView {
 
   private renderTaskFileCard(container: HTMLElement) {
     const card = container.createDiv({ cls: "ld-card ld-glass" });
-    card.createEl("h2", { text: "Task storage" });
+    card.createEl("h2", { text: this.t("taskStorage") });
     card.createDiv({ cls: "ld-setting-row", text: this.plugin.settings.taskFilePath });
-    card.createEl("button", { cls: "ld-button", text: "Open task file" }).addEventListener("click", async () => {
+    card.createEl("button", { cls: "ld-button", text: this.t("openTaskFile") }).addEventListener("click", async () => {
       const file = await this.getOrCreateFile(this.plugin.settings.taskFilePath);
       void this.app.workspace.getLeaf("tab").openFile(file);
     });
@@ -765,22 +1125,22 @@ class LiquidDashboardView extends ItemView {
     const priority = (this.taskPrioritySelect?.value as TaskPriority) ?? "normal";
 
     if (!content) {
-      new Notice("Task content is required.");
+      new Notice(this.t("taskContentRequired"));
       return;
     }
 
     if (!isValidDateString(date)) {
-      new Notice("Please choose a valid date.");
+      new Notice(this.t("chooseValidDate"));
       return;
     }
 
     if (time && !isValidTimeString(time)) {
-      new Notice("Please choose a valid time.");
+      new Notice(this.t("chooseValidTime"));
       return;
     }
 
     await this.appendTask(content, date, time, priority);
-    new Notice("Task added.");
+    new Notice(this.t("taskAdded"));
     await this.render();
   }
 
@@ -819,16 +1179,16 @@ class LiquidDashboardView extends ItemView {
   private async saveReadingNote() {
     const content = this.readingNoteInput?.value.trim() ?? "";
     if (!content) {
-      new Notice("Write a note before saving.");
+      new Notice(this.t("writeNoteBeforeSaving"));
       return;
     }
 
     const file = await this.getOrCreateFile(this.plugin.settings.readingNotesPath);
-    const sourceLink = this.selectedFile ? `[[${this.selectedFile.path}|${this.selectedFile.basename}]]` : "No source note";
+    const sourceLink = this.selectedFile ? `[[${this.selectedFile.path}|${this.selectedFile.basename}]]` : this.t("noSourceNote");
     const entry = [
       `## ${formatDateTime(new Date())}`,
       "",
-      `Source: ${sourceLink}`,
+      `${this.t("source")}: ${sourceLink}`,
       "",
       content,
       ""
@@ -838,24 +1198,24 @@ class LiquidDashboardView extends ItemView {
     if (this.readingNoteInput) {
       this.readingNoteInput.value = "";
     }
-    new Notice("Reading note saved.");
+    new Notice(this.t("readingNoteSaved"));
   }
 
   private async runAiAction(action: AiAction) {
     if (!this.selectedFile) {
-      new Notice("Select a note first.");
+      new Notice(this.t("selectNoteFirst"));
       return;
     }
 
     if (!this.plugin.settings.openAiBaseUrl || !this.plugin.settings.openAiApiKey || !this.plugin.settings.openAiModel) {
-      new Notice("Configure an OpenAI-compatible model in plugin settings first.");
+      new Notice(this.t("configureAiFirst"));
       this.page = "settings";
       await this.render();
       return;
     }
 
     if (action === "question" && !this.aiQuestion.trim()) {
-      new Notice("Ask a question first.");
+      new Notice(this.t("askQuestionFirst"));
       return;
     }
 
@@ -869,18 +1229,18 @@ class LiquidDashboardView extends ItemView {
       if (action === "mindmap") {
         const nodes = await this.generateMindmapNodes(source, this.selectedFile);
         const canvasPath = await this.saveMindmapCanvas(nodes, this.selectedFile);
-        this.aiResult = `Canvas mindmap saved: [[${canvasPath}]]`;
-        new Notice("Canvas mindmap saved.");
+        this.aiResult = `${this.t("canvasMindmapSaved")}: [[${canvasPath}]]`;
+        new Notice(this.t("canvasMindmapSaved"));
       } else {
         const result = await this.callAi(this.buildAiMessages(action, source, this.selectedFile));
         const savedPath = await this.saveAiMarkdown(action, result, this.selectedFile);
         this.aiResult = `${result}\n\n---\nSaved to [[${savedPath}]]`;
-        new Notice("AI output saved.");
+        new Notice(this.t("aiOutputSaved"));
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.aiResult = `AI request failed: ${message}`;
-      new Notice("AI request failed.");
+      this.aiResult = `${this.t("aiRequestFailed")}: ${message}`;
+      new Notice(this.t("aiRequestFailed"));
     } finally {
       this.aiBusy = false;
       await this.render();
@@ -888,7 +1248,9 @@ class LiquidDashboardView extends ItemView {
   }
 
   private buildAiMessages(action: Exclude<AiAction, "mindmap">, source: string, file: TFile): AiMessage[] {
-    const system = "You are an Obsidian assistant. Answer clearly in the user's language. Use concise Markdown.";
+    const system = this.plugin.settings.language === "zh"
+      ? "你是 Obsidian 助手。请用中文清晰回答，使用简洁 Markdown。"
+      : "You are an Obsidian assistant. Answer clearly in English. Use concise Markdown.";
     const doc = `Document path: ${file.path}\n\nDocument content:\n${source.slice(0, 18000)}`;
 
     if (action === "summary") {
@@ -970,17 +1332,17 @@ class LiquidDashboardView extends ItemView {
     const fileName = action === "summary" ? "summary.md" : `question-${slugify(formatDateTime(new Date()))}.md`;
     const path = `${folder}/${fileName}`;
     const body = [
-      `# ${action === "summary" ? "AI Summary" : "AI Question"}`,
+      `# ${action === "summary" ? this.t("aiSummary") : this.t("aiQuestion")}`,
       "",
-      `Source: [[${sourceFile.path}|${sourceFile.basename}]]`,
+      `${this.t("source")}: [[${sourceFile.path}|${sourceFile.basename}]]`,
       "",
-      action === "question" ? `Question: ${this.aiQuestion.trim()}\n` : "",
+      action === "question" ? `${this.t("question")}: ${this.aiQuestion.trim()}\n` : "",
       content,
       ""
     ].join("\n");
 
     await this.writeFile(path, body);
-    await this.appendBacklink(sourceFile, path, action === "summary" ? "AI summary" : "AI question");
+    await this.appendBacklink(sourceFile, path, action === "summary" ? this.t("aiSummaryLink") : this.t("aiQuestionLink"));
     return path;
   }
 
@@ -990,7 +1352,7 @@ class LiquidDashboardView extends ItemView {
     const canvas = buildCanvas(nodes, sourceFile.path);
 
     await this.writeFile(path, JSON.stringify(canvas, null, 2));
-    await this.appendBacklink(sourceFile, path, "AI Canvas mindmap");
+    await this.appendBacklink(sourceFile, path, this.t("aiMindmapLink"));
     return path;
   }
 
@@ -1008,9 +1370,10 @@ class LiquidDashboardView extends ItemView {
       return;
     }
 
-    const section = current.includes("## AI Outputs")
+    const heading = `## ${this.t("aiOutputsHeading")}`;
+    const section = current.includes(heading)
       ? `${current.trimEnd()}\n${link}\n`
-      : `${current.trimEnd()}\n\n## AI Outputs\n${link}\n`;
+      : `${current.trimEnd()}\n\n${heading}\n${link}\n`;
     await this.app.vault.modify(sourceFile, section);
   }
 
@@ -1116,6 +1479,10 @@ class LiquidDashboardSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
+  private t(key: TranslationKey) {
+    return this.plugin.t(key);
+  }
+
   display() {
     const { containerEl } = this;
     containerEl.empty();
@@ -1124,8 +1491,23 @@ class LiquidDashboardSettingTab extends PluginSettingTab {
     containerEl.createEl("h2", { text: "Liquid Dashboard Home" });
 
     new Setting(containerEl)
-      .setName("Task file")
-      .setDesc("All dashboard tasks are saved in this Markdown file.")
+      .setName(this.t("language"))
+      .setDesc(this.t("languageDesc"))
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("zh", this.t("languageZh"))
+          .addOption("en", this.t("languageEn"))
+          .setValue(this.plugin.settings.language)
+          .onChange(async (value) => {
+            this.plugin.settings.language = value as DashboardLanguage;
+            await this.plugin.saveSettings();
+            this.display();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName(this.t("taskFile"))
+      .setDesc(this.t("taskFileDesc"))
       .addText((text) =>
         text
           .setPlaceholder("Dashboard/Tasks.md")
@@ -1137,8 +1519,8 @@ class LiquidDashboardSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Reading notes file")
-      .setDesc("Notes written in the reading pane are appended here.")
+      .setName(this.t("readingNotesFile"))
+      .setDesc(this.t("readingNotesFileDesc"))
       .addText((text) =>
         text
           .setPlaceholder("Dashboard/Reading Notes.md")
@@ -1150,8 +1532,8 @@ class LiquidDashboardSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("AI output root folder")
-      .setDesc("Each source document gets a same-named folder under this root.")
+      .setName(this.t("aiOutputRoot"))
+      .setDesc(this.t("aiOutputRootDesc"))
       .addText((text) =>
         text
           .setPlaceholder("AI Outputs")
@@ -1163,8 +1545,8 @@ class LiquidDashboardSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Open dashboard on startup")
-      .setDesc("Show the dashboard when Obsidian finishes loading.")
+      .setName(this.t("openOnStartup"))
+      .setDesc(this.t("openOnStartupDesc"))
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.autoOpenDashboard)
@@ -1175,8 +1557,8 @@ class LiquidDashboardSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Recent note count")
-      .setDesc("How many recent notes are shown on the home page.")
+      .setName(this.t("recentNoteCount"))
+      .setDesc(this.t("recentNoteCountDesc"))
       .addSlider((slider) =>
         slider
           .setLimits(3, 20, 1)
@@ -1188,11 +1570,11 @@ class LiquidDashboardSettingTab extends PluginSettingTab {
           })
       );
 
-    containerEl.createEl("h3", { text: "OpenAI-compatible model" });
+    containerEl.createEl("h3", { text: this.t("openAiCompatibleModel") });
 
     new Setting(containerEl)
-      .setName("API base URL")
-      .setDesc("Example: https://api.openai.com/v1 or another OpenAI-compatible endpoint.")
+      .setName(this.t("apiBaseUrl"))
+      .setDesc(this.t("apiBaseUrlDesc"))
       .addText((text) =>
         text
           .setPlaceholder("https://api.openai.com/v1")
@@ -1204,8 +1586,8 @@ class LiquidDashboardSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("API key")
-      .setDesc("Saved in this plugin's Obsidian data. It is convenient, not strongly encrypted.")
+      .setName(this.t("apiKey"))
+      .setDesc(this.t("apiKeyDesc"))
       .addText((text) => {
         text.inputEl.type = "password";
         text
@@ -1218,8 +1600,8 @@ class LiquidDashboardSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("Model")
-      .setDesc("Any model name accepted by your OpenAI-compatible provider.")
+      .setName(this.t("model"))
+      .setDesc(this.t("modelDesc"))
       .addText((text) =>
         text
           .setPlaceholder("gpt-4o-mini")
@@ -1230,18 +1612,74 @@ class LiquidDashboardSettingTab extends PluginSettingTab {
           })
       );
 
-    containerEl.createEl("h3", { text: "Countdowns" });
+    containerEl.createEl("h3", { text: this.t("updateSettings") });
+
+    new Setting(containerEl)
+      .setName(this.t("updateRepo"))
+      .setDesc(this.t("updateRepoDesc"))
+      .addText((text) =>
+        text
+          .setPlaceholder("Karovia/Obsidian-dashboard")
+          .setValue(this.plugin.settings.updateRepo)
+          .onChange(async (value) => {
+            this.plugin.settings.updateRepo = value.trim() || DEFAULT_SETTINGS.updateRepo;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName(this.t("updateBranch"))
+      .setDesc(this.t("updateBranchDesc"))
+      .addText((text) =>
+        text
+          .setPlaceholder("main")
+          .setValue(this.plugin.settings.updateBranch)
+          .onChange(async (value) => {
+            this.plugin.settings.updateBranch = value.trim() || DEFAULT_SETTINGS.updateBranch;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName(this.t("autoCheckUpdates"))
+      .setDesc(this.t("autoCheckUpdatesDesc"))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.autoCheckUpdates)
+          .onChange(async (value) => {
+            this.plugin.settings.autoCheckUpdates = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .addButton((button) =>
+        button
+          .setButtonText(this.t("checkAndInstallUpdate"))
+          .setCta()
+          .onClick(async () => {
+            new Notice(this.t("updateChecking"));
+            try {
+              await this.plugin.checkForUpdate(true);
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              new Notice(`${this.t("updateFailed")}: ${message}`);
+            }
+          })
+      );
+
+    containerEl.createEl("h3", { text: this.t("countdowns") });
     containerEl.createDiv({
       cls: "setting-item-description",
-      text: "Add a name and date. The dashboard calculates days from the system date."
+      text: this.t("countdownsDesc")
     });
 
     this.plugin.settings.countdowns.forEach((item, index) => {
       const setting = new Setting(containerEl)
-        .setName(`Countdown ${index + 1}`)
+        .setName(`${this.t("countdown")} ${index + 1}`)
         .addText((text) =>
           text
-            .setPlaceholder("Name")
+            .setPlaceholder(this.t("name"))
             .setValue(item.name)
             .onChange(async (value) => {
               this.plugin.settings.countdowns[index].name = value;
@@ -1259,7 +1697,7 @@ class LiquidDashboardSettingTab extends PluginSettingTab {
         )
         .addButton((button) =>
           button
-            .setButtonText("Delete")
+            .setButtonText(this.t("delete"))
             .setWarning()
             .onClick(async () => {
               this.plugin.settings.countdowns.splice(index, 1);
@@ -1274,11 +1712,11 @@ class LiquidDashboardSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .addButton((button) =>
         button
-          .setButtonText("Add countdown")
+          .setButtonText(this.t("addCountdown"))
           .setCta()
           .onClick(async () => {
             this.plugin.settings.countdowns.push({
-              name: "New countdown",
+              name: this.t("newCountdown"),
               date: formatDate(addDays(today(), 1))
             });
             await this.plugin.saveSettings();
@@ -1519,30 +1957,47 @@ function diffInDays(from: Date, to: Date) {
   return Math.ceil((to.getTime() - from.getTime()) / oneDay);
 }
 
-function getGreeting() {
-  const hour = new Date().getHours();
-  if (hour < 6) {
-    return "Late night, plan gently";
-  }
-  if (hour < 12) {
-    return "Good morning";
-  }
-  if (hour < 18) {
-    return "Good afternoon";
-  }
-  return "Good evening";
+function translate(language: DashboardLanguage, key: TranslationKey) {
+  return TEXT[language]?.[key] ?? TEXT.en[key];
 }
 
-function formatRelativeDate(date: Date) {
+function compareVersions(a: string, b: string) {
+  const aParts = a.split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const bParts = b.split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const length = Math.max(aParts.length, bParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const diff = (aParts[index] ?? 0) - (bParts[index] ?? 0);
+    if (diff !== 0) {
+      return diff;
+    }
+  }
+  return 0;
+}
+
+function getGreeting(language: DashboardLanguage) {
+  const hour = new Date().getHours();
+  if (hour < 6) {
+    return translate(language, "greetingLate");
+  }
+  if (hour < 12) {
+    return translate(language, "greetingMorning");
+  }
+  if (hour < 18) {
+    return translate(language, "greetingAfternoon");
+  }
+  return translate(language, "greetingEvening");
+}
+
+function formatRelativeDate(date: Date, language: DashboardLanguage) {
   const days = diffInDays(today(), new Date(date.getFullYear(), date.getMonth(), date.getDate()));
   if (days === 0) {
-    return "Today";
+    return translate(language, "today");
   }
   if (days === -1) {
-    return "Yesterday";
+    return translate(language, "yesterday");
   }
   if (days > -7 && days < 0) {
-    return `${Math.abs(days)} days ago`;
+    return `${Math.abs(days)} ${translate(language, "daysAgo")}`;
   }
   return formatShortDate(date);
 }
