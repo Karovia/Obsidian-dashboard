@@ -1,0 +1,10 @@
+{
+  "id": "liquid-dashboard-home",
+  "name": "Liquid Dashboard Home",
+  "version": "0.2.0",
+  "minAppVersion": "1.5.0",
+  "description": "A liquid-glass dashboard home for tasks, calendar, recent notes, and countdowns.",
+  "author": "",
+  "authorUrl": "",
+  "isDesktopOnly": false
+}
