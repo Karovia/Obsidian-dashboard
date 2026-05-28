@@ -1,6 +1,6 @@
 {
   "name": "obsidian-liquid-dashboard",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "A liquid-glass dashboard home plugin for Obsidian with tasks, reading, notes, AI, and remote updates.",
   "main": "main.js",
   "scripts": {

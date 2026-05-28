@@ -11,7 +11,7 @@ Liquid Dashboard Home is an Obsidian plugin by Karovia. It turns Obsidian into a
 - Repository: [Karovia/Obsidian-dashboard](https://github.com/Karovia/Obsidian-dashboard)
 - Minimum Obsidian version: `1.5.0`
 - Desktop only: `false`
-- Current version: `0.4.1`
+- Current version: `0.5.0`
 
 ## Features
 
@@ -37,6 +37,7 @@ Liquid Dashboard Home is an Obsidian plugin by Karovia. It turns Obsidian into a
   - Model name
 - Claude Code CLI provider for calling the local `claude` command from Obsidian desktop.
 - Default AI service selector for switching between configured API models and Claude Code CLI.
+- Floating AI assistant that appears after text selection, streams Claude Code CLI answers, and saves only on demand.
 - Ask AI actions:
   - Summarize the current note
   - Ask questions about the current note

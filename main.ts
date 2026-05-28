@@ -1,6 +1,7 @@
 import {
   App,
   ItemView,
+  MarkdownView,
   MarkdownRenderer,
   Notice,
   Plugin,
@@ -68,6 +69,13 @@ interface MindmapNode {
   parentId?: string;
 }
 
+interface FloatingAiContext {
+  file: TFile | null;
+  selectedText: string;
+  fullText: string;
+  prompt: string;
+}
+
 interface NoteTreeNode {
   name: string;
   path: string;
@@ -90,6 +98,17 @@ const TEXT = {
     navReading: "Reading",
     navNotes: "Notes",
     navAskAi: "Ask AI",
+    floatingAskAi: "Ask AI",
+    floatingAskPlaceholder: "Ask about the selected text or current note...",
+    floatingNoContext: "Select text or open a Markdown note first.",
+    floatingRun: "Ask",
+    floatingSave: "Save",
+    floatingClose: "Close",
+    floatingContextSelection: "Selection",
+    floatingContextDocument: "Current note",
+    floatingSaved: "AI answer saved.",
+    floatingEmptyAnswer: "There is no answer to save.",
+    floatingStop: "Stop",
     navSettings: "Settings",
     openDashboard: "Open Liquid Dashboard",
     today: "Today",
@@ -242,6 +261,17 @@ const TEXT = {
     navReading: "阅读",
     navNotes: "笔记",
     navAskAi: "Ask AI",
+    floatingAskAi: "Ask AI",
+    floatingAskPlaceholder: "针对选中文本或当前笔记提问...",
+    floatingNoContext: "请先选中文本，或打开一篇 Markdown 笔记。",
+    floatingRun: "提问",
+    floatingSave: "保存",
+    floatingClose: "关闭",
+    floatingContextSelection: "选中文本",
+    floatingContextDocument: "当前笔记",
+    floatingSaved: "AI 回答已保存。",
+    floatingEmptyAnswer: "还没有可保存的回答。",
+    floatingStop: "停止",
     navSettings: "设置",
     openDashboard: "打开 Liquid Dashboard",
     today: "今天",
@@ -427,12 +457,12 @@ const PAGE_META: Array<{ id: DashboardPage; labelKey: TranslationKey }> = [
   { id: "tasks", labelKey: "navTasks" },
   { id: "reading", labelKey: "navReading" },
   { id: "notes", labelKey: "navNotes" },
-  { id: "askai", labelKey: "navAskAi" },
   { id: "settings", labelKey: "navSettings" }
 ];
 
 export default class LiquidDashboardPlugin extends Plugin {
   settings: DashboardSettings;
+  private floatingAssistant: FloatingAiAssistant | null = null;
 
   async onload() {
     await this.loadSettings();
@@ -454,7 +484,17 @@ export default class LiquidDashboardPlugin extends Plugin {
       }
     });
 
+    this.addCommand({
+      id: "open-floating-ai-assistant",
+      name: this.t("floatingAskAi"),
+      callback: () => {
+        this.floatingAssistant?.openPanel();
+      }
+    });
+
     this.addSettingTab(new LiquidDashboardSettingTab(this.app, this));
+    this.floatingAssistant = new FloatingAiAssistant(this);
+    this.floatingAssistant.mount();
 
     if (this.settings.autoOpenDashboard) {
       this.app.workspace.onLayoutReady(() => {
@@ -472,6 +512,8 @@ export default class LiquidDashboardPlugin extends Plugin {
   }
 
   onunload() {
+    this.floatingAssistant?.unmount();
+    this.floatingAssistant = null;
     this.app.workspace.detachLeavesOfType(DASHBOARD_VIEW_TYPE);
   }
 
@@ -558,6 +600,321 @@ export default class LiquidDashboardPlugin extends Plugin {
 
   private getPluginDir() {
     return (this.manifest as { dir?: string }).dir ?? normalizePath(`.obsidian/plugins/${this.manifest.id}`);
+  }
+
+  getActiveFloatingContext(): FloatingAiContext | null {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view) {
+      return null;
+    }
+
+    const file = view.file;
+    const selectedText = view.editor.getSelection().trim();
+    const fullText = view.editor.getValue();
+    const contextText = selectedText || fullText;
+    if (!contextText.trim()) {
+      return null;
+    }
+
+    return {
+      file,
+      selectedText,
+      fullText,
+      prompt: contextText
+    };
+  }
+
+  async callAi(messages: AiMessage[], onChunk?: (chunk: string) => void, signal?: AbortSignal) {
+    if (this.settings.aiProvider === "claudeCodeCli") {
+      return callClaudeCodeCli(this.settings, messages, onChunk, signal);
+    }
+    const content = await callOpenAiCompatible(this.settings, messages);
+    onChunk?.(content);
+    return content;
+  }
+
+  buildFloatingMessages(question: string, context: FloatingAiContext): AiMessage[] {
+    const system = this.settings.language === "zh"
+      ? "你是 Obsidian 里的阅读助手。优先基于用户提供的选中文本或当前笔记回答，回答要清晰、实用、简洁。"
+      : "You are a reading assistant inside Obsidian. Ground your answer in the selected text or current note. Be clear, useful, and concise.";
+    const contextLabel = context.selectedText ? this.t("floatingContextSelection") : this.t("floatingContextDocument");
+    const fileLine = context.file ? `File: ${context.file.path}` : "File: unknown";
+    return [
+      { role: "system", content: system },
+      {
+        role: "user",
+        content: [
+          fileLine,
+          `Context type: ${contextLabel}`,
+          "",
+          "<context>",
+          context.prompt.slice(0, 20000),
+          "</context>",
+          "",
+          `Question: ${question}`
+        ].join("\n")
+      }
+    ];
+  }
+
+  async saveFloatingAiAnswer(answer: string, question: string, context: FloatingAiContext) {
+    if (!answer.trim()) {
+      new Notice(this.t("floatingEmptyAnswer"));
+      return "";
+    }
+
+    const folder = await this.ensureAiDocumentFolder(context.file);
+    const path = `${folder}/floating-${slugify(formatDateTime(new Date()))}.md`;
+    const sourceLine = context.file ? `${this.t("source")}: [[${context.file.path}|${context.file.basename}]]` : `${this.t("source")}: Floating Assistant`;
+    const body = [
+      `# ${this.t("floatingAskAi")}`,
+      "",
+      sourceLine,
+      "",
+      `${this.t("question")}: ${question}`,
+      "",
+      answer,
+      ""
+    ].join("\n");
+    await this.writeVaultFile(path, body);
+
+    if (context.file) {
+      await this.appendBacklink(context.file, path, this.t("floatingAskAi"));
+    }
+    new Notice(this.t("floatingSaved"));
+    return path;
+  }
+
+  private async ensureAiDocumentFolder(sourceFile: TFile | null) {
+    const root = normalizePath(this.settings.aiOutputRoot || DEFAULT_SETTINGS.aiOutputRoot);
+    const folderName = sourceFile ? sanitizePathSegment(sourceFile.basename) : "Floating Assistant";
+    const folder = normalizePath(`${root}/${folderName}`);
+    await ensureFolderPath(this.app, folder);
+    return folder;
+  }
+
+  private async writeVaultFile(path: string, content: string) {
+    const normalizedPath = normalizePath(path);
+    const existing = this.app.vault.getAbstractFileByPath(normalizedPath);
+    await ensureParentFolder(this.app, normalizedPath);
+
+    if (existing instanceof TFile) {
+      await this.app.vault.modify(existing, content);
+      return existing;
+    }
+    return this.app.vault.create(normalizedPath, content);
+  }
+
+  private async appendBacklink(sourceFile: TFile, outputPath: string, label: string) {
+    const current = await this.app.vault.cachedRead(sourceFile);
+    const heading = `## ${this.t("aiOutputsHeading")}`;
+    const link = `- ${label}: [[${outputPath}]]`;
+    if (current.includes(link)) {
+      return;
+    }
+
+    const section = current.includes(heading)
+      ? `${current.trimEnd()}\n${link}\n`
+      : `${current.trimEnd()}\n\n${heading}\n${link}\n`;
+    await this.app.vault.modify(sourceFile, section);
+  }
+}
+
+class FloatingAiAssistant {
+  private plugin: LiquidDashboardPlugin;
+  private bubbleEl: HTMLElement | null = null;
+  private panelEl: HTMLElement | null = null;
+  private inputEl: HTMLTextAreaElement | null = null;
+  private outputEl: HTMLElement | null = null;
+  private contextEl: HTMLElement | null = null;
+  private saveButtonEl: HTMLButtonElement | null = null;
+  private stopButtonEl: HTMLButtonElement | null = null;
+  private lastContext: FloatingAiContext | null = null;
+  private lastQuestion = "";
+  private lastAnswer = "";
+  private running = false;
+  private abortController: AbortController | null = null;
+  private selectionTimer: number | null = null;
+
+  constructor(plugin: LiquidDashboardPlugin) {
+    this.plugin = plugin;
+  }
+
+  mount() {
+    this.bubbleEl = document.body.createDiv({ cls: "ld-floating-ai-bubble", text: "AI" });
+    this.bubbleEl.addEventListener("click", () => this.openPanel());
+    document.addEventListener("selectionchange", this.handleSelectionChange);
+    document.addEventListener("mouseup", this.handleSelectionChange);
+    document.addEventListener("keyup", this.handleSelectionChange);
+    this.updateBubbleVisibility();
+  }
+
+  unmount() {
+    document.removeEventListener("selectionchange", this.handleSelectionChange);
+    document.removeEventListener("mouseup", this.handleSelectionChange);
+    document.removeEventListener("keyup", this.handleSelectionChange);
+    this.bubbleEl?.remove();
+    this.panelEl?.remove();
+    this.bubbleEl = null;
+    this.panelEl = null;
+    if (this.selectionTimer !== null) {
+      window.clearTimeout(this.selectionTimer);
+    }
+    this.abortController?.abort();
+  }
+
+  openPanel() {
+    this.lastContext = this.plugin.getActiveFloatingContext();
+    if (!this.lastContext) {
+      new Notice(this.plugin.t("floatingNoContext"));
+      this.updateBubbleVisibility(true);
+      return;
+    }
+
+    if (!this.panelEl) {
+      this.renderPanel();
+    }
+    this.panelEl?.addClass("is-open");
+    this.updateContextLabel();
+    this.updateBubbleVisibility(true);
+    window.setTimeout(() => this.inputEl?.focus(), 20);
+  }
+
+  private renderPanel() {
+    this.panelEl = document.body.createDiv({ cls: "ld-floating-ai-panel ld-glass" });
+    const header = this.panelEl.createDiv({ cls: "ld-floating-ai-header" });
+    header.createDiv({ cls: "ld-floating-ai-title", text: this.plugin.t("floatingAskAi") });
+    const closeButton = header.createEl("button", { cls: "ld-icon-button", text: "x" });
+    closeButton.setAttr("aria-label", this.plugin.t("floatingClose"));
+    closeButton.addEventListener("click", () => this.closePanel());
+
+    this.contextEl = this.panelEl.createDiv({ cls: "ld-floating-ai-context" });
+    this.inputEl = this.panelEl.createEl("textarea", {
+      cls: "ld-textarea ld-floating-ai-input",
+      attr: {
+        placeholder: this.plugin.t("floatingAskPlaceholder")
+      }
+    });
+
+    const actions = this.panelEl.createDiv({ cls: "ld-floating-ai-actions" });
+    const runButton = actions.createEl("button", { cls: "ld-button ld-button-primary", text: this.plugin.t("floatingRun") });
+    runButton.addEventListener("click", () => {
+      void this.runQuestion();
+    });
+    this.stopButtonEl = actions.createEl("button", { cls: "ld-button", text: this.plugin.t("floatingStop") });
+    this.stopButtonEl.addEventListener("click", () => {
+      this.abortController?.abort();
+    });
+    this.saveButtonEl = actions.createEl("button", { cls: "ld-button", text: this.plugin.t("floatingSave") });
+    this.saveButtonEl.addEventListener("click", () => {
+      void this.saveAnswer();
+    });
+
+    this.outputEl = this.panelEl.createDiv({ cls: "ld-floating-ai-output markdown-rendered" });
+    this.updateButtonState();
+  }
+
+  private async runQuestion() {
+    if (this.running) {
+      return;
+    }
+
+    const context = this.plugin.getActiveFloatingContext() ?? this.lastContext;
+    const question = this.inputEl?.value.trim() ?? "";
+    if (!context) {
+      new Notice(this.plugin.t("floatingNoContext"));
+      return;
+    }
+    if (!question) {
+      new Notice(this.plugin.t("askQuestionFirst"));
+      return;
+    }
+
+    this.lastContext = context;
+    this.lastQuestion = question;
+    this.lastAnswer = "";
+    this.running = true;
+    this.abortController = new AbortController();
+    this.updateContextLabel();
+    this.updateButtonState();
+    this.setOutput("");
+
+    try {
+      const messages = this.plugin.buildFloatingMessages(question, context);
+      const result = await this.plugin.callAi(messages, (chunk) => {
+        if (this.abortController?.signal.aborted) {
+          return;
+        }
+        this.lastAnswer += chunk;
+        this.setOutput(this.lastAnswer);
+      }, this.abortController.signal);
+      if (!this.lastAnswer.trim()) {
+        this.lastAnswer = result;
+        this.setOutput(result);
+      }
+    } catch (error) {
+      if (!this.abortController?.signal.aborted) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.setOutput(`${this.plugin.t("aiRequestFailed")}: ${message}`);
+      }
+    } finally {
+      this.running = false;
+      this.abortController = null;
+      this.updateButtonState();
+    }
+  }
+
+  private async saveAnswer() {
+    if (!this.lastContext || !this.lastAnswer.trim()) {
+      new Notice(this.plugin.t("floatingEmptyAnswer"));
+      return;
+    }
+    await this.plugin.saveFloatingAiAnswer(this.lastAnswer, this.lastQuestion, this.lastContext);
+  }
+
+  private closePanel() {
+    this.panelEl?.removeClass("is-open");
+    this.updateBubbleVisibility();
+  }
+
+  private setOutput(markdown: string) {
+    if (!this.outputEl) {
+      return;
+    }
+    this.outputEl.empty();
+    void MarkdownRenderer.renderMarkdown(markdown || (this.running ? this.plugin.t("aiThinking") : ""), this.outputEl, "", this.plugin);
+    this.outputEl.scrollTop = this.outputEl.scrollHeight;
+  }
+
+  private updateContextLabel() {
+    if (!this.contextEl || !this.lastContext) {
+      return;
+    }
+    const type = this.lastContext.selectedText ? this.plugin.t("floatingContextSelection") : this.plugin.t("floatingContextDocument");
+    const file = this.lastContext.file?.path ?? this.plugin.t("noNoteSelected");
+    this.contextEl.setText(`${type} · ${file}`);
+  }
+
+  private updateButtonState() {
+    this.saveButtonEl?.toggleAttribute("disabled", this.running || !this.lastAnswer.trim());
+    this.stopButtonEl?.toggleAttribute("disabled", !this.running);
+  }
+
+  private handleSelectionChange = () => {
+    if (this.selectionTimer !== null) {
+      window.clearTimeout(this.selectionTimer);
+    }
+    this.selectionTimer = window.setTimeout(() => this.updateBubbleVisibility(), 120);
+  };
+
+  private updateBubbleVisibility(force = false) {
+    if (!this.bubbleEl) {
+      return;
+    }
+
+    const context = this.plugin.getActiveFloatingContext();
+    const hasSelection = Boolean(context?.selectedText);
+    this.bubbleEl.toggleClass("is-visible", force || hasSelection || Boolean(this.panelEl?.hasClass("is-open")));
   }
 }
 
@@ -2081,13 +2438,13 @@ async function callOpenAiCompatible(settings: DashboardSettings, messages: AiMes
   return content;
 }
 
-async function callClaudeCodeCli(settings: DashboardSettings, messages: AiMessage[]) {
+async function callClaudeCodeCli(settings: DashboardSettings, messages: AiMessage[], onChunk?: (chunk: string) => void, signal?: AbortSignal) {
   const nodeRequire = getNodeRequire();
   if (!nodeRequire) {
     throw new Error("Claude Code CLI is only available in Obsidian desktop.");
   }
 
-  const { execFile } = nodeRequire("child_process") as typeof import("child_process");
+  const { spawn } = nodeRequire("child_process") as typeof import("child_process");
   const prompt = messages
     .map((message) => `${message.role.toUpperCase()}:\n${message.content}`)
     .join("\n\n---\n\n");
@@ -2095,37 +2452,126 @@ async function callClaudeCodeCli(settings: DashboardSettings, messages: AiMessag
     "-p",
     prompt,
     "--output-format",
-    "json",
+    onChunk ? "stream-json" : "json",
+    ...(onChunk ? ["--verbose"] : []),
     "--max-turns",
     String(settings.claudeCliMaxTurns || DEFAULT_SETTINGS.claudeCliMaxTurns)
   ];
 
   return new Promise<string>((resolve, reject) => {
-    execFile(
-      settings.claudeCliCommand || DEFAULT_SETTINGS.claudeCliCommand,
-      args,
-      {
-        timeout: (settings.claudeCliTimeoutSeconds || DEFAULT_SETTINGS.claudeCliTimeoutSeconds) * 1000,
-        maxBuffer: 1024 * 1024 * 8,
-        shell: isWindows()
-      },
-      (error, stdout, stderr) => {
-        if (error) {
-          const detail = stderr?.trim() || error.message;
-          reject(new Error(detail));
-          return;
-        }
-
-        const output = stdout.trim();
-        if (!output) {
-          reject(new Error(stderr?.trim() || "Claude Code CLI returned an empty response."));
-          return;
-        }
-
-        resolve(parseClaudeCliOutput(output));
+    const child = spawn(settings.claudeCliCommand || DEFAULT_SETTINGS.claudeCliCommand, args, {
+      shell: isWindows(),
+      windowsHide: true
+    });
+    let stdout = "";
+    let stderr = "";
+    let lineBuffer = "";
+    let streamedAnswer = "";
+    let settled = false;
+    const timeout = window.setTimeout(() => {
+      child.kill();
+      if (!settled) {
+        settled = true;
+        reject(new Error("Claude Code CLI request timed out."));
       }
-    );
+    }, (settings.claudeCliTimeoutSeconds || DEFAULT_SETTINGS.claudeCliTimeoutSeconds) * 1000);
+
+    const abortHandler = () => {
+      child.kill();
+      if (!settled) {
+        settled = true;
+        reject(new Error("Claude Code CLI request stopped."));
+      }
+    };
+    signal?.addEventListener("abort", abortHandler, { once: true });
+
+    child.stdout.on("data", (data: Buffer) => {
+      const text = data.toString();
+      stdout += text;
+      if (!onChunk) {
+        return;
+      }
+      lineBuffer += text;
+      const lines = lineBuffer.split(/\r?\n/);
+      lineBuffer = lines.pop() ?? "";
+      lines.forEach((line) => {
+        const chunk = parseClaudeStreamLine(line);
+        if (chunk) {
+          streamedAnswer += chunk;
+          onChunk(chunk);
+        }
+      });
+    });
+
+    child.stderr.on("data", (data: Buffer) => {
+      stderr += data.toString();
+    });
+
+    child.on("error", (error: Error) => {
+      window.clearTimeout(timeout);
+      signal?.removeEventListener("abort", abortHandler);
+      if (!settled) {
+        settled = true;
+        reject(error);
+      }
+    });
+
+    child.on("close", (code: number | null) => {
+      window.clearTimeout(timeout);
+      signal?.removeEventListener("abort", abortHandler);
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (code !== 0) {
+        reject(new Error(stderr.trim() || `Claude Code CLI exited with code ${code ?? "unknown"}.`));
+        return;
+      }
+      if (onChunk) {
+        const trailing = parseClaudeStreamLine(lineBuffer);
+        if (trailing) {
+          streamedAnswer += trailing;
+          onChunk(trailing);
+        }
+        resolve(streamedAnswer.trim() || parseClaudeCliOutput(stdout.trim()));
+        return;
+      }
+      resolve(parseClaudeCliOutput(stdout.trim()));
+    });
   });
+}
+
+function parseClaudeStreamLine(line: string) {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  try {
+    const json = JSON.parse(trimmed) as {
+      type?: string;
+      result?: string;
+      delta?: { text?: string };
+      message?: { content?: string | Array<{ text?: string; type?: string }> };
+    };
+    if (json.type === "result" && typeof json.result === "string") {
+      return "";
+    }
+    if (json.delta?.text) {
+      return json.delta.text;
+    }
+    const content = json.message?.content;
+    if (typeof content === "string") {
+      return content;
+    }
+    if (Array.isArray(content)) {
+      return content.map((part) => part.text ?? "").join("");
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
 }
 
 function parseClaudeCliOutput(output: string) {
