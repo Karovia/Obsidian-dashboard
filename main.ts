@@ -19,6 +19,7 @@ type TaskScope = "today" | "week" | "next7";
 type TaskPriority = "high" | "medium" | "normal" | "low";
 type AiAction = "summary" | "question" | "mindmap";
 type DashboardLanguage = "zh" | "en";
+type AiProvider = "openai" | "claudeCodeCli";
 type TranslationKey = keyof typeof TEXT.en;
 
 interface CountdownItem {
@@ -36,9 +37,13 @@ interface DashboardSettings {
   updateRepo: string;
   updateBranch: string;
   recentNoteLimit: number;
+  aiProvider: AiProvider;
   openAiBaseUrl: string;
   openAiApiKey: string;
   openAiModel: string;
+  claudeCliCommand: string;
+  claudeCliMaxTurns: number;
+  claudeCliTimeoutSeconds: number;
   countdowns: CountdownItem[];
 }
 
@@ -184,12 +189,25 @@ const TEXT = {
     recentNoteCount: "Recent note count",
     recentNoteCountDesc: "How many recent notes are shown on the home page.",
     openAiCompatibleModel: "OpenAI-compatible model",
+    aiProvider: "AI provider",
+    aiProviderDesc: "Choose between remote OpenAI-compatible APIs and the local Claude Code CLI.",
+    providerOpenAi: "OpenAI-compatible",
+    providerClaudeCli: "Claude Code CLI",
     apiBaseUrl: "API base URL",
     apiBaseUrlDesc: "Example: https://api.openai.com/v1 or another OpenAI-compatible endpoint.",
     apiKey: "API key",
     apiKeyDesc: "Saved in this plugin's Obsidian data. It is convenient, not strongly encrypted.",
     model: "Model",
     modelDesc: "Any model name accepted by your OpenAI-compatible provider.",
+    claudeCliSettings: "Claude Code CLI",
+    claudeCliCommand: "Claude command",
+    claudeCliCommandDesc: "Command used to run Claude Code CLI. Use claude if it is already on PATH.",
+    claudeCliMaxTurns: "Max turns",
+    claudeCliMaxTurnsDesc: "Limits how many agent turns Claude Code can take.",
+    claudeCliTimeout: "Timeout seconds",
+    claudeCliTimeoutDesc: "Stop the CLI request after this many seconds.",
+    claudeCliDesktopOnly: "Claude Code CLI can only be used in Obsidian desktop.",
+    configureClaudeCliFirst: "Configure Claude Code CLI in plugin settings first.",
     updateSettings: "Remote updates",
     updateRepo: "GitHub repository",
     updateRepoDesc: "Repository used for plugin updates, in owner/name format.",
@@ -321,12 +339,25 @@ const TEXT = {
     recentNoteCount: "最近笔记数量",
     recentNoteCountDesc: "首页显示多少篇最近笔记。",
     openAiCompatibleModel: "OpenAI-compatible 模型",
+    aiProvider: "AI 提供方",
+    aiProviderDesc: "选择远程 OpenAI-compatible API，或调用本机 Claude Code CLI。",
+    providerOpenAi: "OpenAI-compatible",
+    providerClaudeCli: "Claude Code CLI",
     apiBaseUrl: "API Base URL",
     apiBaseUrlDesc: "例如：https://api.openai.com/v1，也可以填写其他兼容端点。",
     apiKey: "API Key",
     apiKeyDesc: "保存在 Obsidian 插件数据里，方便使用，但不是强加密。",
     model: "模型",
     modelDesc: "填写你的 OpenAI-compatible 服务支持的模型名。",
+    claudeCliSettings: "Claude Code CLI",
+    claudeCliCommand: "Claude 命令",
+    claudeCliCommandDesc: "用于运行 Claude Code CLI 的命令。如果已经加入 PATH，填 claude 即可。",
+    claudeCliMaxTurns: "最大轮数",
+    claudeCliMaxTurnsDesc: "限制 Claude Code 最多执行多少轮 agent 操作。",
+    claudeCliTimeout: "超时时间（秒）",
+    claudeCliTimeoutDesc: "超过这个时间后停止 CLI 请求。",
+    claudeCliDesktopOnly: "Claude Code CLI 只能在 Obsidian 桌面端使用。",
+    configureClaudeCliFirst: "请先在插件设置里配置 Claude Code CLI。",
     updateSettings: "远程更新",
     updateRepo: "GitHub 仓库",
     updateRepoDesc: "用于更新插件的仓库，格式为 owner/name。",
@@ -365,9 +396,13 @@ const DEFAULT_SETTINGS: DashboardSettings = {
   updateRepo: "Karovia/Obsidian-dashboard",
   updateBranch: "main",
   recentNoteLimit: 8,
+  aiProvider: "openai",
   openAiBaseUrl: "https://api.openai.com/v1",
   openAiApiKey: "",
   openAiModel: "gpt-4o-mini",
+  claudeCliCommand: "claude",
+  claudeCliMaxTurns: 3,
+  claudeCliTimeoutSeconds: 120,
   countdowns: [
     {
       name: "示例截止日",
@@ -992,7 +1027,7 @@ class LiquidDashboardView extends ItemView {
     header.createEl("h2", { text: this.t("askAi") });
     header.createDiv({
       cls: "ld-model-pill",
-      text: this.plugin.settings.openAiModel || this.t("noModel")
+      text: this.getAiProviderLabel()
     });
 
     const target = card.createDiv({ cls: "ld-ai-target" });
@@ -1049,12 +1084,18 @@ class LiquidDashboardView extends ItemView {
 
     const model = right.createDiv({ cls: "ld-card ld-glass" });
     model.createEl("h2", { text: this.t("aiModel") });
-    model.createDiv({ cls: "ld-setting-row", text: `Base URL: ${this.plugin.settings.openAiBaseUrl || this.t("notSet")}` });
-    model.createDiv({ cls: "ld-setting-row", text: `${this.t("model")}: ${this.plugin.settings.openAiModel || this.t("notSet")}` });
-    model.createDiv({
-      cls: "ld-setting-row",
-      text: this.plugin.settings.openAiApiKey ? this.t("apiKeySaved") : this.t("apiKeyNotSet")
-    });
+    model.createDiv({ cls: "ld-setting-row", text: `${this.t("aiProvider")}: ${this.getAiProviderLabel()}` });
+    if (this.plugin.settings.aiProvider === "openai") {
+      model.createDiv({ cls: "ld-setting-row", text: `Base URL: ${this.plugin.settings.openAiBaseUrl || this.t("notSet")}` });
+      model.createDiv({ cls: "ld-setting-row", text: `${this.t("model")}: ${this.plugin.settings.openAiModel || this.t("notSet")}` });
+      model.createDiv({
+        cls: "ld-setting-row",
+        text: this.plugin.settings.openAiApiKey ? this.t("apiKeySaved") : this.t("apiKeyNotSet")
+      });
+    } else {
+      model.createDiv({ cls: "ld-setting-row", text: `${this.t("claudeCliCommand")}: ${this.plugin.settings.claudeCliCommand || "claude"}` });
+      model.createDiv({ cls: "ld-setting-row", text: `${this.t("claudeCliMaxTurns")}: ${this.plugin.settings.claudeCliMaxTurns}` });
+    }
   }
 
   private renderCalendar(container: HTMLElement, tasks: DashboardTask[]) {
@@ -1304,8 +1345,9 @@ class LiquidDashboardView extends ItemView {
       return;
     }
 
-    if (!this.plugin.settings.openAiBaseUrl || !this.plugin.settings.openAiApiKey || !this.plugin.settings.openAiModel) {
-      new Notice(this.t("configureAiFirst"));
+    const configError = this.getAiConfigError();
+    if (configError) {
+      new Notice(configError);
       this.page = "settings";
       await this.render();
       return;
@@ -1398,6 +1440,10 @@ class LiquidDashboardView extends ItemView {
   }
 
   private async callAi(messages: AiMessage[]) {
+    if (this.plugin.settings.aiProvider === "claudeCodeCli") {
+      return callClaudeCodeCli(this.plugin.settings, messages);
+    }
+
     const base = this.plugin.settings.openAiBaseUrl.replace(/\/+$/, "");
     const response = await requestUrl({
       url: `${base}/chat/completions`,
@@ -1427,6 +1473,30 @@ class LiquidDashboardView extends ItemView {
       throw new Error("The model returned an empty response.");
     }
     return content;
+  }
+
+  private getAiProviderLabel() {
+    if (this.plugin.settings.aiProvider === "claudeCodeCli") {
+      return `${this.t("providerClaudeCli")}: ${this.plugin.settings.claudeCliCommand || "claude"}`;
+    }
+    return this.plugin.settings.openAiModel || this.t("noModel");
+  }
+
+  private getAiConfigError() {
+    if (this.plugin.settings.aiProvider === "claudeCodeCli") {
+      if (!this.plugin.settings.claudeCliCommand.trim()) {
+        return this.t("configureClaudeCliFirst");
+      }
+      if (!getNodeRequire()) {
+        return this.t("claudeCliDesktopOnly");
+      }
+      return "";
+    }
+
+    if (!this.plugin.settings.openAiBaseUrl || !this.plugin.settings.openAiApiKey || !this.plugin.settings.openAiModel) {
+      return this.t("configureAiFirst");
+    }
+    return "";
   }
 
   private async saveAiMarkdown(action: Exclude<AiAction, "mindmap">, content: string, sourceFile: TFile) {
@@ -1675,6 +1745,21 @@ class LiquidDashboardSettingTab extends PluginSettingTab {
     containerEl.createEl("h3", { text: this.t("openAiCompatibleModel") });
 
     new Setting(containerEl)
+      .setName(this.t("aiProvider"))
+      .setDesc(this.t("aiProviderDesc"))
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("openai", this.t("providerOpenAi"))
+          .addOption("claudeCodeCli", this.t("providerClaudeCli"))
+          .setValue(this.plugin.settings.aiProvider)
+          .onChange(async (value) => {
+            this.plugin.settings.aiProvider = value as AiProvider;
+            await this.plugin.saveSettings();
+            this.display();
+          })
+      );
+
+    new Setting(containerEl)
       .setName(this.t("apiBaseUrl"))
       .setDesc(this.t("apiBaseUrlDesc"))
       .addText((text) =>
@@ -1710,6 +1795,49 @@ class LiquidDashboardSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.openAiModel)
           .onChange(async (value) => {
             this.plugin.settings.openAiModel = value.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+
+    containerEl.createEl("h3", { text: this.t("claudeCliSettings") });
+
+    new Setting(containerEl)
+      .setName(this.t("claudeCliCommand"))
+      .setDesc(this.t("claudeCliCommandDesc"))
+      .addText((text) =>
+        text
+          .setPlaceholder("claude")
+          .setValue(this.plugin.settings.claudeCliCommand)
+          .onChange(async (value) => {
+            this.plugin.settings.claudeCliCommand = value.trim() || DEFAULT_SETTINGS.claudeCliCommand;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName(this.t("claudeCliMaxTurns"))
+      .setDesc(this.t("claudeCliMaxTurnsDesc"))
+      .addSlider((slider) =>
+        slider
+          .setLimits(1, 10, 1)
+          .setValue(this.plugin.settings.claudeCliMaxTurns)
+          .setDynamicTooltip()
+          .onChange(async (value) => {
+            this.plugin.settings.claudeCliMaxTurns = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName(this.t("claudeCliTimeout"))
+      .setDesc(this.t("claudeCliTimeoutDesc"))
+      .addSlider((slider) =>
+        slider
+          .setLimits(30, 600, 30)
+          .setValue(this.plugin.settings.claudeCliTimeoutSeconds)
+          .setDynamicTooltip()
+          .onChange(async (value) => {
+            this.plugin.settings.claudeCliTimeoutSeconds = value;
             await this.plugin.saveSettings();
           })
       );
@@ -1917,6 +2045,101 @@ async function callOpenAiCompatible(settings: DashboardSettings, messages: AiMes
     throw new Error("The model returned an empty response.");
   }
   return content;
+}
+
+async function callClaudeCodeCli(settings: DashboardSettings, messages: AiMessage[]) {
+  const nodeRequire = getNodeRequire();
+  if (!nodeRequire) {
+    throw new Error("Claude Code CLI is only available in Obsidian desktop.");
+  }
+
+  const { execFile } = nodeRequire("child_process") as typeof import("child_process");
+  const prompt = messages
+    .map((message) => `${message.role.toUpperCase()}:\n${message.content}`)
+    .join("\n\n---\n\n");
+  const args = [
+    "-p",
+    prompt,
+    "--output-format",
+    "json",
+    "--max-turns",
+    String(settings.claudeCliMaxTurns || DEFAULT_SETTINGS.claudeCliMaxTurns)
+  ];
+
+  return new Promise<string>((resolve, reject) => {
+    execFile(
+      settings.claudeCliCommand || DEFAULT_SETTINGS.claudeCliCommand,
+      args,
+      {
+        timeout: (settings.claudeCliTimeoutSeconds || DEFAULT_SETTINGS.claudeCliTimeoutSeconds) * 1000,
+        maxBuffer: 1024 * 1024 * 8,
+        shell: isWindows()
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          const detail = stderr?.trim() || error.message;
+          reject(new Error(detail));
+          return;
+        }
+
+        const output = stdout.trim();
+        if (!output) {
+          reject(new Error(stderr?.trim() || "Claude Code CLI returned an empty response."));
+          return;
+        }
+
+        resolve(parseClaudeCliOutput(output));
+      }
+    );
+  });
+}
+
+function parseClaudeCliOutput(output: string) {
+  try {
+    const json = JSON.parse(output) as {
+      result?: string;
+      content?: string;
+      message?: { content?: string | Array<{ text?: string; type?: string }> };
+    };
+
+    if (typeof json.result === "string" && json.result.trim()) {
+      return json.result.trim();
+    }
+
+    if (typeof json.content === "string" && json.content.trim()) {
+      return json.content.trim();
+    }
+
+    const messageContent = json.message?.content;
+    if (typeof messageContent === "string" && messageContent.trim()) {
+      return messageContent.trim();
+    }
+
+    if (Array.isArray(messageContent)) {
+      const text = messageContent
+        .map((part) => part.text ?? "")
+        .filter(Boolean)
+        .join("\n")
+        .trim();
+      if (text) {
+        return text;
+      }
+    }
+  } catch {
+    return output;
+  }
+
+  return output;
+}
+
+function getNodeRequire() {
+  const hostWindow = window as Window & { require?: NodeRequire; process?: { platform?: string } };
+  return hostWindow.require;
+}
+
+function isWindows() {
+  const hostWindow = window as Window & { process?: { platform?: string } };
+  return hostWindow.process?.platform === "win32";
 }
 
 function buildNoteTree(files: TFile[]) {
