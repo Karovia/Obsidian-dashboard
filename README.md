@@ -11,7 +11,7 @@ Liquid Dashboard Home is an Obsidian plugin by Karovia. It turns Obsidian into a
 - Repository: [Karovia/Obsidian-dashboard](https://github.com/Karovia/Obsidian-dashboard)
 - Minimum Obsidian version: `1.5.0`
 - Desktop only: `false`
-- Current version: `0.5.0`
+- Current version: `0.5.1`
 
 ## Features
 

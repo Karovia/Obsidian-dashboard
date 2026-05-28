@@ -457,6 +457,7 @@ const PAGE_META: Array<{ id: DashboardPage; labelKey: TranslationKey }> = [
   { id: "tasks", labelKey: "navTasks" },
   { id: "reading", labelKey: "navReading" },
   { id: "notes", labelKey: "navNotes" },
+  { id: "askai", labelKey: "navAskAi" },
   { id: "settings", labelKey: "navSettings" }
 ];
 
@@ -603,13 +604,30 @@ export default class LiquidDashboardPlugin extends Plugin {
   }
 
   getActiveFloatingContext(): FloatingAiContext | null {
+    const activeLeaf = (this.app.workspace as { activeLeaf?: WorkspaceLeaf | null }).activeLeaf;
+    if (activeLeaf?.view instanceof LiquidDashboardView) {
+      const dashboardContext = activeLeaf.view.getFloatingContextFromDashboard();
+      if (dashboardContext) {
+        return dashboardContext;
+      }
+    }
+
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     if (!view) {
-      return null;
+      const domSelection = getDomSelectionText();
+      if (!domSelection) {
+        return null;
+      }
+      return {
+        file: this.app.workspace.getActiveFile(),
+        selectedText: domSelection,
+        fullText: domSelection,
+        prompt: domSelection
+      };
     }
 
     const file = view.file;
-    const selectedText = view.editor.getSelection().trim();
+    const selectedText = view.editor.getSelection().trim() || getDomSelectionText();
     const fullText = view.editor.getValue();
     const contextText = selectedText || fullText;
     if (!contextText.trim()) {
@@ -635,8 +653,8 @@ export default class LiquidDashboardPlugin extends Plugin {
 
   buildFloatingMessages(question: string, context: FloatingAiContext): AiMessage[] {
     const system = this.settings.language === "zh"
-      ? "你是 Obsidian 里的阅读助手。优先基于用户提供的选中文本或当前笔记回答，回答要清晰、实用、简洁。"
-      : "You are a reading assistant inside Obsidian. Ground your answer in the selected text or current note. Be clear, useful, and concise.";
+      ? "你是 Obsidian Dashboard 里的 AI 助手。必须优先基于 <context> 中的内容回答，不要泛泛寒暄。如果用户要求创建日程或任务，请给出可直接执行的任务清单、日期和时间建议。回答要清晰、实用、简洁。"
+      : "You are an AI assistant inside an Obsidian Dashboard. Ground your answer in the <context> content first and do not reply with generic greetings. If the user asks to create schedules or tasks, provide actionable task items with date and time suggestions. Be clear, useful, and concise.";
     const contextLabel = context.selectedText ? this.t("floatingContextSelection") : this.t("floatingContextDocument");
     const fileLine = context.file ? `File: ${context.file.path}` : "File: unknown";
     return [
@@ -939,6 +957,7 @@ class LiquidDashboardView extends ItemView {
   private taskPrioritySelect: HTMLSelectElement | null = null;
   private readingNoteInput: HTMLTextAreaElement | null = null;
   private refreshTimer: number | null = null;
+  private latestTasks: DashboardTask[] = [];
 
   constructor(leaf: WorkspaceLeaf, plugin: LiquidDashboardPlugin) {
     super(leaf);
@@ -951,6 +970,58 @@ class LiquidDashboardView extends ItemView {
 
   private priorityLabel(priority: TaskPriority) {
     return this.t(PRIORITY_META[priority].labelKey);
+  }
+
+  getFloatingContextFromDashboard(): FloatingAiContext | null {
+    const selectedText = getDomSelectionText();
+    const file = this.selectedFile;
+
+    if (selectedText) {
+      return {
+        file,
+        selectedText,
+        fullText: selectedText,
+        prompt: selectedText
+      };
+    }
+
+    if (this.page === "reading" && file) {
+      return {
+        file,
+        selectedText: "",
+        fullText: `Current reading note: ${file.path}`,
+        prompt: `Current reading note: ${file.path}. The user did not select text, so answer based on the current reading page and ask for clarification if needed.`
+      };
+    }
+
+    if (this.page === "tasks" || this.page === "home") {
+      const todayTasks = this.getTasksForRange(this.latestTasks, formatDate(today()), formatDate(today()));
+      const upcomingTasks = this.getTasksForRange(this.latestTasks, formatDate(today()), formatDate(addDays(today(), 6)));
+      const prompt = [
+        `Dashboard page: ${this.page}`,
+        "",
+        "Today tasks:",
+        ...todayTasks.map((task) => `- [${task.completed ? "x" : " "}] ${task.content} ${task.date} ${task.time}`.trim()),
+        "",
+        "Next 7 days:",
+        ...upcomingTasks.map((task) => `- [${task.completed ? "x" : " "}] ${task.content} ${task.date} ${task.time}`.trim()),
+        "",
+        "If the user asks to create a schedule, infer concrete tasks and dates from their request."
+      ].join("\n");
+      return {
+        file: null,
+        selectedText: "",
+        fullText: prompt,
+        prompt
+      };
+    }
+
+    return {
+      file,
+      selectedText: "",
+      fullText: `Dashboard page: ${this.page}`,
+      prompt: `Dashboard page: ${this.page}. Answer conversationally and ask for missing details when needed.`
+    };
   }
 
   getViewType() {
@@ -992,6 +1063,7 @@ class LiquidDashboardView extends ItemView {
   async render() {
     const tasks = await this.loadTasks();
     const notes = this.getReadableNotes();
+    this.latestTasks = tasks;
 
     if (!this.selectedFile && notes.length > 0) {
       this.selectedFile = notes[0];
@@ -1422,6 +1494,14 @@ class LiquidDashboardView extends ItemView {
     } else if (this.aiResult) {
       const result = card.createDiv({ cls: "ld-ai-result markdown-rendered" });
       await MarkdownRenderer.renderMarkdown(this.aiResult, result, this.selectedFile?.path ?? "", this);
+      card.createEl("button", { cls: "ld-button", text: this.t("floatingSave") }).addEventListener("click", async () => {
+        if (!this.selectedFile) {
+          new Notice(this.t("selectNoteFirst"));
+          return;
+        }
+        await this.saveAiMarkdown("question", this.aiResult, this.selectedFile);
+        new Notice(this.t("aiOutputSaved"));
+      });
     }
 
     this.renderVaultNoteList(right, notes);
@@ -1741,9 +1821,7 @@ class LiquidDashboardView extends ItemView {
         new Notice(this.t("canvasMindmapSaved"));
       } else {
         const result = await this.callAi(this.buildAiMessages(action, source, this.selectedFile));
-        const savedPath = await this.saveAiMarkdown(action, result, this.selectedFile);
-        this.aiResult = `${result}\n\n---\nSaved to [[${savedPath}]]`;
-        new Notice(this.t("aiOutputSaved"));
+        this.aiResult = result;
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -2923,6 +3001,12 @@ function diffInDays(from: Date, to: Date) {
 
 function translate(language: DashboardLanguage, key: TranslationKey) {
   return TEXT[language]?.[key] ?? TEXT.en[key];
+}
+
+function getDomSelectionText() {
+  const selection = window.getSelection();
+  const text = selection?.toString().trim() ?? "";
+  return text.length > 0 ? text : "";
 }
 
 function compareVersions(a: string, b: string) {
