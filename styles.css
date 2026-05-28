@@ -659,6 +659,10 @@
   min-height: 130px;
 }
 
+.ld-ai-service-select {
+  margin: 12px 0 4px;
+}
+
 .ld-ai-result {
   margin-top: 14px;
   max-height: 420px;

@@ -188,6 +188,8 @@ const TEXT = {
     openOnStartupDesc: "Show the dashboard when Obsidian finishes loading.",
     recentNoteCount: "Recent note count",
     recentNoteCountDesc: "How many recent notes are shown on the home page.",
+    defaultAiService: "Default AI service",
+    defaultAiServiceDesc: "Choose which service Ask AI uses by default.",
     openAiCompatibleModel: "OpenAI-compatible model",
     aiProvider: "AI provider",
     aiProviderDesc: "Choose between remote OpenAI-compatible APIs and the local Claude Code CLI.",
@@ -338,6 +340,8 @@ const TEXT = {
     openOnStartupDesc: "Obsidian 加载完成后显示 Dashboard。",
     recentNoteCount: "最近笔记数量",
     recentNoteCountDesc: "首页显示多少篇最近笔记。",
+    defaultAiService: "默认 AI 服务",
+    defaultAiServiceDesc: "选择 Ask AI 默认使用哪个服务。",
     openAiCompatibleModel: "OpenAI-compatible 模型",
     aiProvider: "AI 提供方",
     aiProviderDesc: "选择远程 OpenAI-compatible API，或调用本机 Claude Code CLI。",
@@ -488,7 +492,7 @@ export default class LiquidDashboardPlugin extends Plugin {
   }
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    this.settings = normalizeSettings(Object.assign({}, DEFAULT_SETTINGS, await this.loadData()));
   }
 
   async saveSettings() {
@@ -1084,6 +1088,14 @@ class LiquidDashboardView extends ItemView {
 
     const model = right.createDiv({ cls: "ld-card ld-glass" });
     model.createEl("h2", { text: this.t("aiModel") });
+    const providerSelect = model.createEl("select", { cls: "ld-input ld-ai-service-select" });
+    providerSelect.createEl("option", { text: this.t("providerOpenAi"), value: "openai" });
+    providerSelect.createEl("option", { text: this.t("providerClaudeCli"), value: "claudeCodeCli" });
+    providerSelect.value = this.plugin.settings.aiProvider;
+    providerSelect.addEventListener("change", () => {
+      this.plugin.settings.aiProvider = providerSelect.value as AiProvider;
+      void this.plugin.saveSettings();
+    });
     model.createDiv({ cls: "ld-setting-row", text: `${this.t("aiProvider")}: ${this.getAiProviderLabel()}` });
     if (this.plugin.settings.aiProvider === "openai") {
       model.createDiv({ cls: "ld-setting-row", text: `Base URL: ${this.plugin.settings.openAiBaseUrl || this.t("notSet")}` });
@@ -1742,11 +1754,11 @@ class LiquidDashboardSettingTab extends PluginSettingTab {
           })
       );
 
-    containerEl.createEl("h3", { text: this.t("openAiCompatibleModel") });
+    containerEl.createEl("h3", { text: this.t("defaultAiService") });
 
     new Setting(containerEl)
-      .setName(this.t("aiProvider"))
-      .setDesc(this.t("aiProviderDesc"))
+      .setName(this.t("defaultAiService"))
+      .setDesc(this.t("defaultAiServiceDesc"))
       .addDropdown((dropdown) =>
         dropdown
           .addOption("openai", this.t("providerOpenAi"))
@@ -1758,6 +1770,8 @@ class LiquidDashboardSettingTab extends PluginSettingTab {
             this.display();
           })
       );
+
+    containerEl.createEl("h3", { text: this.t("openAiCompatibleModel") });
 
     new Setting(containerEl)
       .setName(this.t("apiBaseUrl"))
@@ -1975,6 +1989,26 @@ function parseTaskLine(line: string, index: number): DashboardTask | null {
     line: index,
     raw: line
   };
+}
+
+function normalizeSettings(settings: DashboardSettings) {
+  if (settings.aiProvider !== "openai" && settings.aiProvider !== "claudeCodeCli") {
+    settings.aiProvider = DEFAULT_SETTINGS.aiProvider;
+  }
+
+  if (!settings.claudeCliCommand) {
+    settings.claudeCliCommand = DEFAULT_SETTINGS.claudeCliCommand;
+  }
+
+  if (!Number.isFinite(settings.claudeCliMaxTurns) || settings.claudeCliMaxTurns < 1) {
+    settings.claudeCliMaxTurns = DEFAULT_SETTINGS.claudeCliMaxTurns;
+  }
+
+  if (!Number.isFinite(settings.claudeCliTimeoutSeconds) || settings.claudeCliTimeoutSeconds < 30) {
+    settings.claudeCliTimeoutSeconds = DEFAULT_SETTINGS.claudeCliTimeoutSeconds;
+  }
+
+  return settings;
 }
 
 function parsePriority(source: string): TaskPriority {
